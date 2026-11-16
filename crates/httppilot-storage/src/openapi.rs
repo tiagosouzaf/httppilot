@@ -49,7 +49,7 @@ fn resolve<'a>(root: &'a Value, value: &'a Value) -> Result<&'a Value, OpenApiEr
     Ok(resolved)
 }
 
-fn first_server<'a>(source: &'a Value) -> Option<&'a Value> {
+fn first_server(source: &Value) -> Option<&Value> {
     source
         .get("servers")
         .and_then(Value::as_array)
