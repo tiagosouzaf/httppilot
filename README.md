@@ -30,6 +30,8 @@ cargo run -p httppilot-cli -- import-postman ./postman-collection-v2.1.json
 cargo run -p httppilot-cli -- export-postman 1 ./exported-collection.json
 ```
 
+In the desktop sidebar, use **Open file** to choose a Postman JSON, then **Import collection**. For export, use **Save as** to select a *new* JSON filename and click **Export** beside the collection. Windows uses the system file dialog via PowerShell; Linux looks for Zenity or KDialog. If no dialog is available, type the full path manually. File operations run off the UI thread.
+
 Postman imports append a new local collection instead of overwriting existing data. Collection IDs can be listed with `list-collections`. Export refuses to overwrite an existing file, and on Unix newly exported files have user-only permissions. Only raw request bodies and common HTTP methods are currently supported. Nested Postman folders become request-name prefixes.
 
 On Linux, GUI packages for Wayland/X11 may be required depending on the distribution.
@@ -45,8 +47,13 @@ On Linux, GUI packages for Wayland/X11 may be required depending on the distribu
 - Bearer token and Basic authentication, optionally saved explicitly to the OS keychain
 - Debounced automatic saving to SQLite, with revision checks to prevent conflicting instances from overwriting each other
 - Reusable Reqwest HTTP connection pool and bounded 1 MiB response preview
-- Postman Collection v2.1 import/export via CLI (no Postman account or cloud required)
+- Postman Collection v2.1 import/export from the desktop and CLI (no Postman account or cloud required)
+- Privacy-preserving SQLite history of successful HTTP responses (status, method, elapsed time, request ID only)
 - CI for Ubuntu and Windows
+
+## Request history
+
+Successful HTTP responses are recorded locally with method, status code, elapsed time and a reference to the saved request. The history keeps the newest 250 records and displays up to 30 in the desktop sidebar. Click an entry to open its saved request. History deliberately does **not** store URLs, headers, query parameters, bodies, tokens or response payloads. A **Clear history** button deletes recorded entries. This lightweight history is not a complete request/response archive.
 
 ## Workspace security
 
@@ -78,7 +85,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## Roadmap
 
-- Native file-picker import/export UI, hierarchical Postman folders and OpenAPI import/export
+- Native portal-based file picker for all Linux desktops, hierarchical Postman folders and OpenAPI import/export
 - Test scripts and execution history
 - GraphQL, WebSocket, gRPC and binary file streaming
 - Benchmarking, releases and Windows/Linux installers
