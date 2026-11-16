@@ -284,7 +284,8 @@ mod tests {
         assert_eq!(req.headers()["content-type"], "application/json");
         assert!(req.headers().get("anthropic-version").is_none());
         assert!(String::from_utf8_lossy(req.body().unwrap().as_bytes().unwrap())
-            .contains("\\"store\\":false"));
+
+            .contains(r#""store":false"#));
     }
 
     #[test]
