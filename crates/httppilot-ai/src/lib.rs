@@ -113,19 +113,7 @@ impl AiEngine {
     /// Sends user-entered prompt text to a fixed, official provider endpoint.
     pub async fn ask(&self, request: AiRequest) -> Result<AiAnswer, AiError> {
         validate(&request)?;
-        let payload = payload_for(&request);
-        let builder = self
-            .client
-            .post(request.provider.endpoint())
-            .bearer_auth(request.api_key.trim())
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(payload.to_string());
-        let builder = match request.provider {
-            AiProvider::OpenAi => builder,
-            AiProvider::Anthropic => builder.header("anthropic-version", "2026-10-21"),
-        };
-
-        let mut response = builder.send().await?;
+        let mut response = self.build_request(&request).send().await?;
         let status = response.status();
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await? {
@@ -148,6 +136,22 @@ impl AiEngine {
             provider: request.provider,
             model: request.model,
         })
+    }
+
+    /// Centralize request headers and JSON encoding for both providers.
+    fn build_request(&self, request: &AiRequest) -> reqwest::RequestBuilder {
+        let payload = payload_for(request);
+        let builder = self
+            .client
+            .post(request.provider.endpoint())
+            .bearer_auth(request.api_key.trim())
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(payload.to_string());
+
+        match request.provider {
+            AiProvider::OpenAi => builder,
+            AiProvider::Anthropic => builder.header("anthropic-version", "2026-10-21"),
+        }
     }
 }
 
@@ -269,6 +273,36 @@ mod tests {
         );
         assert!(json.get("store").is_none());
         assert!(!json.to_string().contains("do-not-log-secret"));
+    }
+
+    #[test]
+    fn openai_http_request_has_bearer_and_no_anthropic_headers() {
+        let ai = AiEngine::new().unwrap();
+        let req = ai
+            .build_request(&input(AiProvider::OpenAi))
+            .build()
+            .unwrap();
+        assert_eq!(req.url().as_str(), "https://api.openai.com/v1/responses");
+        assert_eq!(req.headers()["authorization"], "Bearer do-not-log-secret");
+        assert_eq!(req.headers()["content-type"], "application/json");
+        assert!(req.headers().get("anthropic-version").is_none());
+        assert!(
+            String::from_utf8_lossy(req.body().unwrap().as_bytes().unwrap())
+                .contains(r#""store":false"#)
+        );
+    }
+
+    #[test]
+    fn anthropic_http_request_uses_current_version_and_auth() {
+        let ai = AiEngine::new().unwrap();
+        let req = ai
+            .build_request(&input(AiProvider::Anthropic))
+            .build()
+            .unwrap();
+        assert_eq!(req.url().as_str(), "https://api.anthropic.com/v1/messages");
+        assert_eq!(req.headers()["authorization"], "Bearer do-not-log-secret");
+        assert_eq!(req.headers()["anthropic-version"], "2026-10-21");
+        assert_eq!(req.headers()["content-type"], "application/json");
     }
 
     #[test]
