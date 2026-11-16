@@ -7,8 +7,8 @@ HttpPilot is a native, cross-platform API client for Windows and Linux. The enti
 ## Workspace modules
 
 - **httppilot-core:** Reqwest/Tokio HTTP engine, pooled connections, timeout, template interpolation, bounded response preview.
-- **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion.
-- **httppilot-desktop:** Iced UI, request tabs, editable headers/query params, collection renaming, authentication, autosave and cancellation.
+- **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion and bounded request history metadata.
+- **httppilot-desktop:** Iced UI, request tabs, editable headers/query params, collection renaming, authentication, autosave, cancellation, native file dialogs and history sidebar.
 - **httppilot-cli:** HTTP requests and Postman Collection v2.1 import/export commands.
 
 ## Request flow
@@ -39,11 +39,15 @@ A force quit can still lose unsaved edits. Workspaces are not yet normalized int
 - The Windows credential store and Linux Secret Service are used by the keychain integration. If a keychain call fails, there is no plaintext fallback.
 - URLs, request bodies, ordinary environment variables, arbitrary headers and query parameters are still stored in plaintext and may contain sensitive data.
 
+## Request history
+
+SQLite stores the most recent 250 successful request executions in a separate table. Each record contains the saved request ID, HTTP method, status, duration and timestamp. The UI shows up to 30 records and can reopen an existing saved request. URLs, query parameters, headers, request/response bodies and authentication secrets are never written into history. Clearing history deletes these records, without changing the workspace revision.
+
 ## Postman interoperability
 
-Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as `Users / Get one`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
+Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI and desktop; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as `Users / Get one`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
 
-Explicit authentication metadata and common secret-bearing headers are ignored during import/export. A raw URL or body may still contain secrets: **review imported/exported JSON carefully**. Postman export creates a new file only; it refuses to overwrite an existing file.
+Explicit authentication metadata and common secret-bearing headers are ignored during import/export. A raw URL or body may still contain secrets: **review imported/exported JSON carefully**. Postman export creates a new file only; it refuses to overwrite an existing file. Desktop file selection uses PowerShell Windows Forms dialogs on Windows, Zenity or KDialog on Linux where installed, and falls back to a manual path field.
 
 ## Performance principles
 
@@ -56,7 +60,7 @@ Explicit authentication metadata and common secret-bearing headers are ignored d
 
 ## Known limitations / roadmap
 
-1. Provide native Postman import/export UI and fully hierarchical collection folders.
+1. Provide native desktop portal file pickers on all Linux setups and fully hierarchical collection folders.
 2. Add OpenAPI import/export, request scripts, test assertions and execution history.
 3. Add streaming downloads, GraphQL, WebSocket and gRPC.
 4. Introduce virtualization for large request lists and structured JSON viewers.
