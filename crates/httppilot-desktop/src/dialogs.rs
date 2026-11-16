@@ -28,7 +28,7 @@ pub fn select_json_file(save: bool) -> Result<Option<String>, String> {
             "-STA",
             "-Command",
             &script,
-        ]));
+        ]))
     }
 
     #[cfg(target_os = "linux")]
