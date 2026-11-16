@@ -343,6 +343,59 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn filters_codex_events_and_returns_only_final_message() {
+        let events = [
+            r#"{"type":"item.completed","item":{"type":"command_execution","output":"DO-NOT-SHOW"}}"#,
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"Resposta segura"}}"#,
+            r#"{"type":"turn.completed","usage":{"total_tokens":12}}"#,
+        ]
+        .join("\n");
+        let answer = parse_codex_final_answer(events.as_bytes()).unwrap();
+        assert_eq!(answer, "Resposta segura");
+        assert!(!answer.contains("DO-NOT-SHOW"));
+    }
+
+    #[test]
+    fn malformed_or_empty_codex_output_is_not_displayed() {
+        assert!(matches!(
+            parse_codex_final_answer(br#"{"type":"item.completed"}"#),
+            Err(LocalCliError::EmptyAnswer)
+        ));
+        assert!(matches!(
+            parse_codex_final_answer(b"not json"),
+            Err(LocalCliError::InvalidCodexOutput)
+        ));
+    }
+
+    #[test]
+    fn only_selected_mcp_servers_are_enabled() {
+        let installed = vec!["github".into(), "postgres".into(), "my.server".into()];
+        let selected = vec!["postgres".to_owned()];
+        let overrides = build_mcp_overrides(&installed, &selected).unwrap();
+        assert_eq!(
+            overrides,
+            vec![
+                "mcp_servers.\"github\".enabled=false",
+                "mcp_servers.\"postgres\".enabled=true",
+                "mcp_servers.\"my.server\".enabled=false",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_or_unsafe_mcp_servers() {
+        let installed = vec!["github".into(), "bad\"name".into()];
+        assert!(matches!(
+            build_mcp_overrides(&installed, &["missing".into()]),
+            Err(LocalCliError::McpNotFound(_))
+        ));
+        assert!(matches!(
+            build_mcp_overrides(&installed, &["github".into()]),
+            Err(LocalCliError::InvalidMcpName(_))
+        ));
+    }
+
+    #[test]
     fn recognizes_subscription_without_exposing_tokens() {
         assert_eq!(
             classify_login_status(true, "Logged in using ChatGPT"),
