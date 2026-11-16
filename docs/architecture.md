@@ -13,7 +13,7 @@ HttpPilot is a native, cross-platform API client for Windows and Linux. The enti
 
 ## Request flow
 
-\`\`\`text
+```text
 Desktop or CLI
     -> single-pass environment expansion ({{name}})
     -> HttpRequest (method, URL, query, headers, auth, optional body)
@@ -21,7 +21,7 @@ Desktop or CLI
     -> HTTP response chunks
     -> bounded preview + status + headers + elapsed time
     -> UI / terminal
-\`\`\`
+```
 
 A response preview is capped at 1 MiB by default. Large responses require a future binary streaming/download implementation.
 
@@ -41,7 +41,7 @@ A force quit can still lose unsaved edits. Workspaces are not yet normalized int
 
 ## Postman interoperability
 
-Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as \`Users / Get one\`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
+Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as `Users / Get one`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
 
 Explicit authentication metadata and common secret-bearing headers are ignored during import/export. A raw URL or body may still contain secrets: **review imported/exported JSON carefully**. Postman export creates a new file only; it refuses to overwrite an existing file.
 

@@ -1,4 +1,10 @@
-use std::{env, error::Error, fs, io::{self, Write}, process};
+use std::{
+    env,
+    error::Error,
+    fs,
+    io::{self, Write},
+    process,
+};
 
 use httppilot_core::{HttpEngine, HttpRequest};
 use httppilot_storage::{Storage, export_postman_json, import_postman_json};
@@ -101,7 +107,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 response.status,
                 response.elapsed.as_millis(),
                 response.preview_bytes,
-                if response.truncated { ", truncated" } else { "" },
+                if response.truncated {
+                    ", truncated"
+                } else {
+                    ""
+                },
             );
             println!("{}", response.body_preview);
         }
@@ -110,14 +120,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn required_arg(args: &mut impl Iterator<Item = String>, name: &str) -> Result<String, io::Error> {
-    args.next().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, format!("missing {name}"))
-    })
+    args.next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("missing {name}")))
 }
 
 fn ensure_no_extra_args(mut args: impl Iterator<Item = String>) -> Result<(), io::Error> {
     if args.next().is_some() {
-        Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected extra arguments"))
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unexpected extra arguments",
+        ))
     } else {
         Ok(())
     }

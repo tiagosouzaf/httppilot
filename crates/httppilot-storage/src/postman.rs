@@ -10,8 +10,7 @@ use thiserror::Error;
 
 use crate::{Collection, Header, QueryParameter, is_sensitive_header};
 
-const POSTMAN_SCHEMA: &str =
-    "https://schema.getpostman.com/json/collection/v2.1.0/collection.json";
+const POSTMAN_SCHEMA: &str = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json";
 
 #[derive(Debug, Error)]
 pub enum PostmanError {
@@ -55,7 +54,12 @@ fn query_params(url: &Value) -> Vec<QueryParameter> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|item| !item.get("disabled").and_then(Value::as_bool).unwrap_or(false))
+        .filter(|item| {
+            !item
+                .get("disabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
         .filter_map(|item| {
             let name = item.get("key")?.as_str()?.trim();
             if name.is_empty() || is_sensitive_header(name) {
@@ -78,7 +82,9 @@ fn extract_url(url: &Value) -> Result<(String, Vec<QueryParameter>), PostmanErro
         return Ok((raw.to_owned(), Vec::new()));
     }
     if !url.is_object() {
-        return Err(PostmanError::Invalid("request.url must be a string or object"));
+        return Err(PostmanError::Invalid(
+            "request.url must be a string or object",
+        ));
     }
 
     let raw = url.get("raw").and_then(Value::as_str).unwrap_or("");
@@ -104,7 +110,10 @@ fn extract_url(url: &Value) -> Result<(String, Vec<QueryParameter>), PostmanErro
     if host.is_empty() {
         return Err(PostmanError::Invalid("request.url host is empty"));
     }
-    let protocol = url.get("protocol").and_then(Value::as_str).unwrap_or("https");
+    let protocol = url
+        .get("protocol")
+        .and_then(Value::as_str)
+        .unwrap_or("https");
     let path = url
         .get("path")
         .and_then(Value::as_array)
@@ -352,10 +361,19 @@ mod tests {
                 method: "POST".into(),
                 url: "https://example.org/people".into(),
                 headers: vec![
-                    Header { name: "Accept".into(), value: "application/json".into() },
-                    Header { name: "Authorization".into(), value: "private".into() },
+                    Header {
+                        name: "Accept".into(),
+                        value: "application/json".into(),
+                    },
+                    Header {
+                        name: "Authorization".into(),
+                        value: "private".into(),
+                    },
                 ],
-                query: vec![QueryParameter { name: "limit".into(), value: "3".into() }],
+                query: vec![QueryParameter {
+                    name: "limit".into(),
+                    value: "3".into(),
+                }],
                 body: r#"{"name":"demo"}"#.into(),
             }],
         };
