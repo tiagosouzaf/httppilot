@@ -4,6 +4,8 @@
 //! AI panel. Requests, API response bodies and workspace data are never added
 //! automatically. API credentials live in memory or in the OS keychain.
 
+pub mod local;
+
 use std::{fmt, time::Duration};
 
 use reqwest::{Client, StatusCode};
