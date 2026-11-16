@@ -1,5 +1,6 @@
 use std::{fmt, io::Write};
 
+mod assistant;
 mod dialogs;
 
 use httppilot_core::{HttpEngine, HttpRequest, HttpResponse, RequestAuth, render_template};
@@ -114,6 +115,7 @@ struct Credentials {
 }
 
 struct State {
+    assistant: assistant::State,
     workspace: Workspace,
     name: String,
     verb: Verb,
@@ -181,6 +183,7 @@ impl Default for State {
             .unwrap_or_default();
 
         let mut state = Self {
+            assistant: assistant::State::default(),
             workspace,
             name: String::new(),
             verb: Verb::Get,
@@ -287,6 +290,7 @@ impl State {
 
 #[derive(Debug, Clone)]
 enum Message {
+    Assistant(assistant::Message),
     NewCollection,
     PostmanPathChanged(String),
     PickPostmanFile(bool),
@@ -351,6 +355,9 @@ enum Message {
 fn update(state: &mut State, message: Message) -> Task<Message> {
     let generation_before = state.edit_generation;
     match message {
+        Message::Assistant(action) => {
+            return assistant::update(&mut state.assistant, action).map(Message::Assistant);
+        }
         Message::NewCollection => {
             state.capture_active();
             let collection_id = state.workspace.new_collection();
@@ -1380,6 +1387,7 @@ fn view(state: &State) -> Element<'_, Message> {
                 .padding(12)
                 .width(Length::Fill),
             text(&state.save_status).size(12),
+            assistant::view(&state.assistant).map(Message::Assistant),
         ]
         .spacing(12)
         .padding(16)
@@ -1397,6 +1405,7 @@ fn view(state: &State) -> Element<'_, Message> {
                 text("Choose a request from the collections on the left."),
                 button("Save workspace").on_press(Message::Save),
                 text(&state.save_status).size(12),
+                assistant::view(&state.assistant).map(Message::Assistant),
             ]
             .spacing(14)
             .padding(16),
