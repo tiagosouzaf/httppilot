@@ -219,7 +219,7 @@ pub fn launch_official_claude_code() -> Result<(), LocalCliError> {
             .args(["/C", "start", "", "cmd.exe", "/K", "claude"])
             .spawn()
             .map_err(|_| LocalCliError::ClaudeCodeUnavailable)?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
