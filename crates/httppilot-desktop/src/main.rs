@@ -107,7 +107,6 @@ struct State {
     bearer_token: String,
     basic_username: String,
     basic_password: String,
-    new_environment_name: String,
     new_variable_name: String,
     new_variable_value: String,
     new_variable_secret: bool,
@@ -148,7 +147,6 @@ impl Default for State {
             bearer_token: String::new(),
             basic_username: String::new(),
             basic_password: String::new(),
-            new_environment_name: String::new(),
             new_variable_name: String::new(),
             new_variable_value: String::new(),
             new_variable_secret: false,
@@ -387,57 +385,53 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::EnvironmentRenamed(name) => {
-            if let Some(id) = state.workspace.active_environment_id {
-                if let Some(environment) = state.workspace.environment_mut(id) {
-                    environment.name = name;
-                    state.mark_dirty();
-                }
+            if let Some(id) = state.workspace.active_environment_id
+                && let Some(environment) = state.workspace.environment_mut(id)
+            {
+                environment.name = name;
+                state.mark_dirty();
             }
         }
         Message::EnvVariableNameChanged(index, name) => {
-            if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state
+            if let Some(id) = state.workspace.active_environment_id
+                && let Some(variable) = state
                     .workspace
                     .environment_mut(id)
                     .and_then(|env| env.variables.get_mut(index))
-                {
-                    variable.name = name;
-                    state.mark_dirty();
-                }
+            {
+                variable.name = name;
+                state.mark_dirty();
             }
         }
         Message::EnvVariableValueChanged(index, value) => {
-            if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state
+            if let Some(id) = state.workspace.active_environment_id
+                && let Some(variable) = state
                     .workspace
                     .environment_mut(id)
                     .and_then(|env| env.variables.get_mut(index))
-                {
-                    variable.value = value;
-                    state.mark_dirty();
-                }
+            {
+                variable.value = value;
+                state.mark_dirty();
             }
         }
         Message::EnvVariableSecret(index, secret) => {
-            if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state
+            if let Some(id) = state.workspace.active_environment_id
+                && let Some(variable) = state
                     .workspace
                     .environment_mut(id)
                     .and_then(|env| env.variables.get_mut(index))
-                {
-                    variable.secret = secret;
-                    state.mark_dirty();
-                }
+            {
+                variable.secret = secret;
+                state.mark_dirty();
             }
         }
         Message::RemoveEnvVariable(index) => {
-            if let Some(id) = state.workspace.active_environment_id {
-                if let Some(environment) = state.workspace.environment_mut(id) {
-                    if index < environment.variables.len() {
-                        environment.variables.remove(index);
-                        state.mark_dirty();
-                    }
-                }
+            if let Some(id) = state.workspace.active_environment_id
+                && let Some(environment) = state.workspace.environment_mut(id)
+                && index < environment.variables.len()
+            {
+                environment.variables.remove(index);
+                state.mark_dirty();
             }
         }
         Message::NewVariableName(value) => state.new_variable_name = value,
@@ -445,19 +439,18 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::ToggleNewVariableSecret => state.new_variable_secret = !state.new_variable_secret,
         Message::AddEnvVariable => {
             let name = state.new_variable_name.trim().to_owned();
-            if !name.is_empty() {
-                if let Some(id) = state.workspace.active_environment_id {
-                    if let Some(environment) = state.workspace.environment_mut(id) {
-                        environment.variables.push(EnvironmentVariable {
-                            name,
-                            value: std::mem::take(&mut state.new_variable_value),
-                            secret: state.new_variable_secret,
-                        });
-                        state.new_variable_name.clear();
-                        state.new_variable_secret = false;
-                        state.mark_dirty();
-                    }
-                }
+            if !name.is_empty()
+                && let Some(id) = state.workspace.active_environment_id
+                && let Some(environment) = state.workspace.environment_mut(id)
+            {
+                environment.variables.push(EnvironmentVariable {
+                    name,
+                    value: std::mem::take(&mut state.new_variable_value),
+                    secret: state.new_variable_secret,
+                });
+                state.new_variable_name.clear();
+                state.new_variable_secret = false;
+                state.mark_dirty();
             }
         }
         Message::AuthChanged(mode) => state.auth_mode = mode,
