@@ -6,6 +6,7 @@ HttpPilot is a native, cross-platform API client for Windows and Linux. The enti
 
 ## Workspace modules
 
+- **httppilot-ai:** opt-in OpenAI Responses and Claude Messages API adapters, official Codex subscription CLI integration, local Codex MCP discovery, official Claude Code launcher.
 - **httppilot-core:** Reqwest/Tokio HTTP engine, pooled connections, timeout, template interpolation, bounded response preview.
 - **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion and bounded request history metadata.
 - **httppilot-desktop:** Iced UI, request tabs, editable headers/query params, collection renaming, authentication, autosave, cancellation, native file dialogs and history sidebar.
@@ -48,6 +49,16 @@ SQLite stores the most recent 250 successful request executions in a separate ta
 Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI and desktop; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as `Users / Get one`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
 
 Explicit authentication metadata and common secret-bearing headers are ignored during import/export. A raw URL or body may still contain secrets: **review imported/exported JSON carefully**. Postman export creates a new file only; it refuses to overwrite an existing file. Desktop file selection uses PowerShell Windows Forms dialogs on Windows, Zenity or KDialog on Linux where installed, and falls back to a manual path field.
+
+## AI architecture and boundaries
+
+The AI panel is a separate Iced state machine with its own prompt editor. It does **not** read or attach HTTP requests, responses, workspace state or keychain entries to prompts unless the user manually enters text.
+
+API mode uses Reqwest against fixed official endpoints and no redirects to prevent credential leakage across domains. The UI supports editing model IDs and manual opt-in keychain persistence. ChatGPT subscriber mode calls the already-installed official `codex exec` CLI after validating `codex login status` reports a ChatGPT login. It sends prompts over stdin, uses a read-only CLI filesystem sandbox, and does not store CLI authentication tokens. MCP server names are extracted from `codex mcp list --json` on the user's machine; raw MCP config and any credentials it contains are never surfaced.
+
+MCP loading is opt-in, with the important caveat that MCP tools can write to remote services even when Codex's local shell runs in a read-only filesystem sandbox. Remote authorization remains the responsibility of the connected MCP server and official Codex CLI, not the HttpPilot OS filesystem sandbox.
+
+Claude.ai subscription authentication is not reused inside HttpPilot: Anthropic's terms prohibit third-party apps from routing requests with consumer subscription credentials. HttpPilot can open the unmodified official Claude Code terminal app as a separate process, leaving its subscription and MCP authentication entirely in Anthropic's own application. Embedded Claude requests require API keys billed under the API account.
 
 ## Performance principles
 
