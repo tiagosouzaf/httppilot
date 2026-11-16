@@ -1,21 +1,19 @@
 # HttpPilot
 
-High-performance, cross-platform API client built in Rust for **Windows** and **Linux**.
+High-performance native API client built in Rust for **Windows** and **Linux**. No Electron or WebView.
 
-> Early development: this repository contains a functional HTTP request/response prototype, not a full Postman replacement.
+> Early-stage development: this is a prototype, not yet a full replacement for Postman.
 
-## Goals
+## Stack
 
-- Native desktop GUI powered by [Iced](https://iced.rs/), without Electron or a WebView
-- Reusable, asynchronous HTTP engine built on Tokio and Reqwest
-- Bounded response previews to avoid accidentally loading huge responses into the UI
-- Local-first collections, environments, history and authentication (planned)
-- A CLI built on the same engine
-- Measure latency, startup time and memory usage before claiming performance improvements
+- Iced (desktop interface)
+- Tokio + Reqwest (asynchronous HTTP)
+- SQLite / Rusqlite (local-first workspace)
+- Shared Rust HTTP engine and optional CLI
 
-## Getting started
+## Run locally
 
-Install the stable [Rust toolchain](https://rustup.rs/) (Rust 1.88+).
+Requires the stable Rust toolchain (Rust 1.88+).
 
 ```bash
 git clone https://github.com/tiagosouzaf/httppilot.git
@@ -23,40 +21,39 @@ cd httppilot
 cargo run -p httppilot-desktop
 ```
 
-A CLI is also available:
+CLI:
 
 ```bash
 cargo run -p httppilot-cli -- GET https://httpbin.org/get
 ```
 
-On Linux, the graphical stack may require your distribution's Wayland/X11 development libraries.
+On Linux, GUI packages for Wayland/X11 may be required depending on the distribution.
 
-## Structure
+## Implemented in the prototype
+
+- GET, POST, PUT, PATCH, DELETE and HEAD requests
+- Native desktop with sidebar collections and multiple request tabs
+- Request-name editor, editable headers and request body
+- Send button, HTTP response status, elapsed time and text preview
+- Manual **Save** of workspace/collections/tabs to local SQLite
+- Reusable Reqwest HTTP connection pool and bounded 1 MiB response preview
+- CI for Ubuntu and Windows
+
+## Workspace security
+
+Local data is stored in **unencrypted SQLite** in the OS-specific application data directory. HttpPilot removes common secret-bearing headers from saved snapshots, but **request bodies, URLs and other custom headers are not encrypted**. Do not store secrets in those fields. Secure credential storage is planned.
+
+## Source layout
 
 ```text
 crates/
-  httppilot-core/     # reusable HTTP execution engine
-  httppilot-desktop/  # desktop UI in Iced
-  httppilot-cli/      # minimal CLI for smoke tests and automation
+  httppilot-core/     # reusable HTTP engine
+  httppilot-storage/  # collections, tabs and SQLite storage
+  httppilot-desktop/  # Iced native GUI
+  httppilot-cli/      # CLI for smoke testing
 docs/
-  architecture.md     # technical decisions and roadmap
+  architecture.md
 ```
-
-## Initial capabilities
-
-- GET, POST, PUT, PATCH, DELETE and HEAD requests
-- Editable URL and multiline request body
-- HTTP status, elapsed time and response preview
-- Request timeouts and reusable connection pooling via Reqwest
-- Preview limited to 1 MiB by default; this is **not** a full streaming viewer yet
-
-## Roadmap
-
-1. Collections, tabs, request headers, local SQLite persistence
-2. Environments, variable interpolation, auth (Bearer/Basic/OAuth2)
-3. History, import/export (Postman/OpenAPI), request scripting
-4. WebSocket, GraphQL and gRPC, plus streaming binary downloads
-5. Performance benchmarks and Windows/Linux installers
 
 ## Development
 
@@ -66,4 +63,12 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-No credentials, secrets, or personal API data should be committed. A public repository does not automatically confer an open-source license; licensing is still to be decided.
+## Roadmap
+
+- Secure authentication and environments
+- Collection editing, query parameters and autosave
+- Postman/OpenAPI import/export and test scripts
+- GraphQL, WebSocket, gRPC and binary file streaming
+- Benchmarking, releases and Windows/Linux installers
+
+A public GitHub repository is not automatically open-source licensed. Licensing has not yet been chosen.

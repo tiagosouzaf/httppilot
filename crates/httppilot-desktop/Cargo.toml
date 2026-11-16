@@ -7,4 +7,6 @@ rust-version.workspace = true
 
 [dependencies]
 httppilot-core = { path = "../httppilot-core" }
+httppilot-storage = { path = "../httppilot-storage" }
 iced.workspace = true
+tokio.workspace = true
