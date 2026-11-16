@@ -6,7 +6,7 @@ mod dialogs;
 use httppilot_core::{HttpEngine, HttpRequest, HttpResponse, RequestAuth, render_template};
 use httppilot_storage::{
     EnvironmentVariable, Header, HistoryEntry, ImportedCollection, QueryParameter, Storage,
-    Workspace, export_postman_json, import_postman_json,
+    Workspace, export_postman_json, import_postman_json, import_openapi_json,
 };
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
@@ -206,7 +206,7 @@ impl Default for State {
             error: None,
             save_status,
             postman_path: String::new(),
-            postman_status: "Choose a Postman Collection v2.1 JSON file".to_owned(),
+            postman_status: "Choose a Postman v2.1 or OpenAPI 3.x JSON file".to_owned(),
             postman_busy: false,
             history,
             history_status: String::new(),
@@ -296,6 +296,7 @@ enum Message {
     PickPostmanFile(bool),
     PostmanFilePicked(Result<Option<String>, String>),
     ImportPostman,
+    ImportOpenApi,
     PostmanImported(Result<ImportedCollection, String>),
     ExportPostman(u64),
     PostmanExported(Result<String, String>),
@@ -428,6 +429,34 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Message::PostmanImported,
             );
         }
+        Message::ImportOpenApi => {
+            if state.postman_busy {
+                return Task::none();
+            }
+            let path = state.postman_path.trim().to_owned();
+            if path.is_empty() {
+                state.postman_status = "Choose an OpenAPI JSON file or enter its path".to_owned();
+                return Task::none();
+            }
+            state.postman_busy = true;
+            state.postman_status = "Importing OpenAPI 3.x JSON...".to_owned();
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || -> Result<ImportedCollection, String> {
+                        let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+                        if metadata.len() > 10 * 1024 * 1024 {
+                            return Err("OpenAPI import exceeds the 10 MiB limit".to_owned());
+                        }
+                        let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                        import_openapi_json(&json).map_err(|e| e.to_string())
+                    })
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result)
+                },
+                Message::PostmanImported,
+            );
+        }
         Message::PostmanImported(result) => {
             state.postman_busy = false;
             match result {
@@ -448,7 +477,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     }
                     state.mark_dirty();
                     state.postman_status =
-                        format!("Imported {count} requests. Review URLs and bodies for secrets.");
+                        format!("Imported {count} requests. Configure environment variables and review URLs for secrets.");
                 }
                 Err(error) => state.postman_status = format!("Import failed: {error}"),
             }
@@ -1084,9 +1113,9 @@ fn view(state: &State) -> Element<'_, Message> {
         }
     }
 
-    sidebar = sidebar.push(text("POSTMAN v2.1").size(14));
+    sidebar = sidebar.push(text("API IMPORT / EXPORT").size(14));
     sidebar = sidebar.push(
-        text_input("Path to collection.json", &state.postman_path)
+        text_input("Path to OpenAPI/Postman JSON", &state.postman_path)
             .on_input(Message::PostmanPathChanged),
     );
     let mut file_buttons = row![
@@ -1099,7 +1128,8 @@ fn view(state: &State) -> Element<'_, Message> {
     }
     sidebar = sidebar.push(file_buttons);
     if !state.postman_busy {
-        sidebar = sidebar.push(button("Import collection").on_press(Message::ImportPostman));
+        sidebar = sidebar.push(button("Import Postman v2.1").on_press(Message::ImportPostman));
+        sidebar = sidebar.push(button("Import OpenAPI 3.x").on_press(Message::ImportOpenApi));
     }
     sidebar = sidebar.push(text(&state.postman_status).size(11));
     sidebar = sidebar.push(text("History (metadata only)").size(14));
