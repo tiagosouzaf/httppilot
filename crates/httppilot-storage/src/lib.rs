@@ -9,7 +9,9 @@ use thiserror::Error;
 
 pub mod history;
 pub mod postman;
+pub mod openapi;
 pub use history::HistoryEntry;
+pub use openapi::{OpenApiError, import_openapi_json};
 pub use postman::{
     ImportedCollection, ImportedRequest, PostmanError, export_postman_json, import_postman_json,
 };
