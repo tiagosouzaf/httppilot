@@ -1,0 +1,11 @@
+[package]
+name = "httppilot-ai"
+description = "Official OpenAI and Claude API adapters for HttpPilot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

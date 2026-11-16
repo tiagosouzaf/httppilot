@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/httppilot-ai",
     "crates/httppilot-core",
     "crates/httppilot-storage",
     "crates/httppilot-desktop",

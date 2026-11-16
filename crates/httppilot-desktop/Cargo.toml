@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+httppilot-ai = { path = "../httppilot-ai" }
 httppilot-core = { path = "../httppilot-core" }
 httppilot-storage = { path = "../httppilot-storage" }
 iced.workspace = true
