@@ -396,8 +396,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::EnvVariableNameChanged(index, name) => {
             if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state.workspace.environment_mut(id)
-                    .and_then(|env| env.variables.get_mut(index)) {
+                if let Some(variable) = state
+                    .workspace
+                    .environment_mut(id)
+                    .and_then(|env| env.variables.get_mut(index))
+                {
                     variable.name = name;
                     state.mark_dirty();
                 }
@@ -405,8 +408,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::EnvVariableValueChanged(index, value) => {
             if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state.workspace.environment_mut(id)
-                    .and_then(|env| env.variables.get_mut(index)) {
+                if let Some(variable) = state
+                    .workspace
+                    .environment_mut(id)
+                    .and_then(|env| env.variables.get_mut(index))
+                {
                     variable.value = value;
                     state.mark_dirty();
                 }
@@ -414,8 +420,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::EnvVariableSecret(index, secret) => {
             if let Some(id) = state.workspace.active_environment_id {
-                if let Some(variable) = state.workspace.environment_mut(id)
-                    .and_then(|env| env.variables.get_mut(index)) {
+                if let Some(variable) = state
+                    .workspace
+                    .environment_mut(id)
+                    .and_then(|env| env.variables.get_mut(index))
+                {
                     variable.secret = secret;
                     state.mark_dirty();
                 }
@@ -496,7 +505,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 request.auth = match state.auth_mode {
                     AuthMode::None => RequestAuth::None,
                     AuthMode::Bearer => RequestAuth::Bearer(
-                        render_template(&state.bearer_token, &vars).map_err(|e| e.to_string())?
+                        render_template(&state.bearer_token, &vars).map_err(|e| e.to_string())?,
                     ),
                     AuthMode::Basic => RequestAuth::Basic {
                         username: render_template(&state.basic_username, &vars)
@@ -633,7 +642,9 @@ fn view(state: &State) -> Element<'_, Message> {
         .iter()
         .find(|choice| Some(choice.id) == state.workspace.active_environment_id)
         .cloned();
-    sidebar = sidebar.push(pick_list(choices, selected, |choice| Message::SelectEnvironment(choice.id)));
+    sidebar = sidebar.push(pick_list(choices, selected, |choice| {
+        Message::SelectEnvironment(choice.id)
+    }));
 
     if let Some(environment) = state
         .workspace
@@ -642,8 +653,7 @@ fn view(state: &State) -> Element<'_, Message> {
         .find(|env| Some(env.id) == state.workspace.active_environment_id)
     {
         sidebar = sidebar.push(
-            text_input("Environment name", &environment.name)
-                .on_input(Message::EnvironmentRenamed),
+            text_input("Environment name", &environment.name).on_input(Message::EnvironmentRenamed),
         );
 
         for (index, var) in environment.variables.iter().enumerate() {
@@ -678,8 +688,12 @@ fn view(state: &State) -> Element<'_, Message> {
                     .secure(state.new_variable_secret)
                     .on_input(Message::NewVariableValue),
                 row![
-                    button(if state.new_variable_secret { "Secret" } else { "Plain" })
-                        .on_press(Message::ToggleNewVariableSecret),
+                    button(if state.new_variable_secret {
+                        "Secret"
+                    } else {
+                        "Plain"
+                    })
+                    .on_press(Message::ToggleNewVariableSecret),
                     button("+ Add variable").on_press(Message::AddEnvVariable),
                 ]
                 .spacing(6),
@@ -688,7 +702,8 @@ fn view(state: &State) -> Element<'_, Message> {
         );
     }
 
-    sidebar = sidebar.push(text("Secret values are session-only; plain values are saved.").size(11));
+    sidebar =
+        sidebar.push(text("Secret values are session-only; plain values are saved.").size(11));
 
     let sidebar: Element<'_, Message> = container(scrollable(sidebar.padding(14)))
         .width(Length::Fixed(240.0))
@@ -773,14 +788,18 @@ fn view(state: &State) -> Element<'_, Message> {
             AuthMode::Bearer => authentication.push(
                 text_input("Bearer token (not saved)", &state.bearer_token)
                     .secure(true)
-                    .on_input(Message::BearerChanged)
+                    .on_input(Message::BearerChanged),
             ),
             AuthMode::Basic => authentication
-                .push(text_input("Username", &state.basic_username)
-                    .on_input(Message::BasicUsernameChanged))
-                .push(text_input("Password (not saved)", &state.basic_password)
-                    .secure(true)
-                    .on_input(Message::BasicPasswordChanged)),
+                .push(
+                    text_input("Username", &state.basic_username)
+                        .on_input(Message::BasicUsernameChanged),
+                )
+                .push(
+                    text_input("Password (not saved)", &state.basic_password)
+                        .secure(true)
+                        .on_input(Message::BasicPasswordChanged),
+                ),
         };
 
         let mut headers =

@@ -39,7 +39,10 @@ pub enum RequestAuth {
     #[default]
     None,
     Bearer(String),
-    Basic { username: String, password: String },
+    Basic {
+        username: String,
+        password: String,
+    },
 }
 
 /// Replace single-pass {{variable}} placeholders without recursively expanding values.
@@ -138,7 +141,9 @@ impl HttpEngine {
         builder = match request.auth {
             RequestAuth::None => builder,
             RequestAuth::Bearer(token) => builder.bearer_auth(token),
-            RequestAuth::Basic { username, password } => builder.basic_auth(username, Some(password)),
+            RequestAuth::Basic { username, password } => {
+                builder.basic_auth(username, Some(password))
+            }
         };
         if let Some(body) = request.body {
             builder = builder.body(body);
@@ -206,12 +211,18 @@ mod tests {
     #[test]
     fn expands_templates_once_and_rejects_missing_variables() {
         let vars = vec![(String::from("baseUrl"), String::from("https://example.org"))];
-        assert_eq!(render_template("{{baseUrl}}/v1", &vars).unwrap(), "https://example.org/v1");
+        assert_eq!(
+            render_template("{{baseUrl}}/v1", &vars).unwrap(),
+            "https://example.org/v1"
+        );
         assert_eq!(
             render_template("{{missing}}", &vars),
             Err(TemplateError::MissingVariable("missing".to_owned()))
         );
-        assert_eq!(render_template("{{oops", &vars), Err(TemplateError::UnclosedPlaceholder));
+        assert_eq!(
+            render_template("{{oops", &vars),
+            Err(TemplateError::UnclosedPlaceholder)
+        );
     }
 
     #[test]

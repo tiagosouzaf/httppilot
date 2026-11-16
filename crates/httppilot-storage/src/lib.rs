@@ -352,12 +352,23 @@ mod tests {
         let store = in_memory();
         let mut workspace = Workspace::default();
         workspace.environments[0].variables = vec![
-            EnvironmentVariable { name: "baseUrl".into(), value: "https://example.com".into(), secret: false },
-            EnvironmentVariable { name: "token".into(), value: "dont-save-this".into(), secret: true },
+            EnvironmentVariable {
+                name: "baseUrl".into(),
+                value: "https://example.com".into(),
+                secret: false,
+            },
+            EnvironmentVariable {
+                name: "token".into(),
+                value: "dont-save-this".into(),
+                secret: true,
+            },
         ];
         store.save(&workspace).unwrap();
         let loaded = store.load().unwrap();
-        assert_eq!(loaded.environments[0].variables[0].value, "https://example.com");
+        assert_eq!(
+            loaded.environments[0].variables[0].value,
+            "https://example.com"
+        );
         assert!(loaded.environments[0].variables[1].value.is_empty());
     }
 
