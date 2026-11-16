@@ -1,0 +1,10 @@
+[package]
+name = "httppilot-cli"
+description = "CLI using the HttpPilot HTTP engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+httppilot-core = { path = "../httppilot-core" }
+tokio.workspace = true

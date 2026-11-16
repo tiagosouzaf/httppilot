@@ -1,0 +1,13 @@
+[package]
+name = "httppilot-core"
+description = "Shared HTTP engine for HttpPilot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
