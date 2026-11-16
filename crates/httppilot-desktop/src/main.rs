@@ -263,6 +263,7 @@ impl State {
 #[derive(Debug, Clone)]
 enum Message {
     NewCollection,
+    RenameCollection(u64, String),
     NewRequest(u64),
     OpenRequest(u64),
     CloseTab(u64),
@@ -323,6 +324,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             state.load_active();
             state.mark_dirty();
+        }
+        Message::RenameCollection(id, name) => {
+            if state.workspace.rename_collection(id, &name) {
+                state.mark_dirty();
+            }
         }
         Message::NewRequest(collection_id) => {
             state.capture_active();
@@ -803,9 +809,12 @@ fn view(state: &State) -> Element<'_, Message> {
     .width(Length::Fixed(220.0));
 
     for collection in &state.workspace.collections {
+        let collection_id = collection.id;
         sidebar = sidebar.push(
             row![
-                text(&collection.name).size(15).width(Length::Fill),
+                text_input("Collection name", &collection.name)
+                    .on_input(move |name| Message::RenameCollection(collection_id, name))
+                    .width(Length::Fill),
                 button("+").on_press(Message::NewRequest(collection.id)),
             ]
             .spacing(4)
