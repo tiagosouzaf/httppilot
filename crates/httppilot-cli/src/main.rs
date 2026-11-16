@@ -7,7 +7,7 @@ use std::{
 };
 
 use httppilot_core::{HttpEngine, HttpRequest};
-use httppilot_storage::{Storage, export_postman_json, import_postman_json};
+use httppilot_storage::{Storage, export_postman_json, import_postman_json, import_openapi_json};
 
 const MAX_POSTMAN_IMPORT_BYTES: u64 = 10 * 1024 * 1024;
 
@@ -32,8 +32,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 );
             }
         }
-        "import-postman" => {
-            let path = required_arg(&mut args, "Postman collection JSON file")?;
+        "import-postman" | "import-openapi" => {
+            let path = required_arg(&mut args, "Postman or OpenAPI JSON file")?;
             ensure_no_extra_args(args)?;
 
             let metadata = fs::metadata(&path)?;
@@ -45,7 +45,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .into());
             }
             let contents = fs::read_to_string(&path)?;
-            let imported = import_postman_json(&contents)?;
+            let imported = if command == "import-openapi" {
+                import_openapi_json(&contents)?
+            } else {
+                import_postman_json(&contents)?
+            };
             let imported_count = imported.requests.len();
 
             let storage = Storage::open_default()?;
@@ -55,7 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             eprintln!(
                 "Warning: request URLs, bodies and non-secret fields are stored as plaintext in SQLite. \
-                 Postman auth and recognized secret headers are not imported."
+                 Postman/OpenAPI auth metadata and recognized secret headers are not imported."
             );
             println!("Imported collection {id} with {imported_count} requests.");
         }
@@ -141,6 +145,7 @@ fn usage() -> ! {
     eprintln!("  httppilot-cli METHOD URL [BODY]");
     eprintln!("  httppilot-cli list-collections");
     eprintln!("  httppilot-cli import-postman <collection-v2.1.json>");
+    eprintln!("  httppilot-cli import-openapi <openapi-v3.json>");
     eprintln!("  httppilot-cli export-postman <collection-id> <new-output.json>");
     process::exit(2);
 }
