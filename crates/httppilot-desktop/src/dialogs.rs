@@ -22,7 +22,7 @@ pub fn select_json_file(save: bool) -> Result<Option<String>, String> {
                  [Console]::Write($dialog.FileName) \
              }}"
         );
-        return command_result(Command::new("powershell.exe").args([
+        command_result(Command::new("powershell.exe").args([
             "-NoProfile",
             "-NonInteractive",
             "-STA",
