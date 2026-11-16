@@ -428,7 +428,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     let count = collection.requests.len();
                     state.capture_active();
                     let id = state.workspace.append_imported_collection(collection);
-                    if let Some(request_id) = state.workspace.collections
+                    if let Some(request_id) = state
+                        .workspace
+                        .collections
                         .iter()
                         .find(|collection| collection.id == id)
                         .and_then(|collection| collection.requests.first())
@@ -438,9 +440,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.load_active();
                     }
                     state.mark_dirty();
-                    state.postman_status = format!(
-                        "Imported {count} requests. Review URLs and bodies for secrets."
-                    );
+                    state.postman_status =
+                        format!("Imported {count} requests. Review URLs and bodies for secrets.");
                 }
                 Err(error) => state.postman_status = format!("Import failed: {error}"),
             }
@@ -449,7 +450,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.postman_busy {
                 return Task::none();
             }
-            let Some(collection) = state.workspace.collections
+            let Some(collection) = state
+                .workspace
+                .collections
                 .iter()
                 .find(|collection| collection.id == collection_id)
                 .cloned()
@@ -465,7 +468,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 
             // Export the live workspace snapshot, including unsaved editor changes.
             state.capture_active();
-            let collection = state.workspace.collections
+            let collection = state
+                .workspace
+                .collections
                 .iter()
                 .find(|item| item.id == collection_id)
                 .cloned()
@@ -485,7 +490,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                             options.mode(0o600);
                         }
                         let mut output = options.open(&path).map_err(|e| e.to_string())?;
-                        output.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+                        output
+                            .write_all(json.as_bytes())
+                            .map_err(|e| e.to_string())?;
                         Ok(path)
                     })
                     .await
@@ -498,9 +505,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::PostmanExported(result) => {
             state.postman_busy = false;
             state.postman_status = match result {
-                Ok(path) => format!(
-                    "Exported to {path}. Review the JSON for sensitive URLs and bodies."
-                ),
+                Ok(path) => {
+                    format!("Exported to {path}. Review the JSON for sensitive URLs and bodies.")
+                }
                 Err(error) => format!("Export failed: {error}"),
             };
         }
@@ -528,15 +535,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Message::HistoryCleared,
             );
         }
-        Message::HistoryCleared(result) => {
-            match result {
-                Ok(()) => {
-                    state.history.clear();
-                    state.history_status = "History cleared".to_owned();
-                }
-                Err(error) => state.history_status = format!("Could not clear history: {error}"),
+        Message::HistoryCleared(result) => match result {
+            Ok(()) => {
+                state.history.clear();
+                state.history_status = "History cleared".to_owned();
             }
-        }
+            Err(error) => state.history_status = format!("Could not clear history: {error}"),
+        },
         Message::RenameCollection(id, name) => {
             if state.workspace.rename_collection(id, &name) {
                 state.mark_dirty();
@@ -925,7 +930,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Ok(response) => {
                     let status_code = response.status;
                     let duration_ms = response.elapsed.as_millis().min(u64::MAX as u128) as u64;
-                    let method = state.workspace.request(id)
+                    let method = state
+                        .workspace
+                        .request(id)
                         .map(|request| request.method.clone())
                         .unwrap_or_else(|| state.verb.to_string());
                     state.response = Some(response);
@@ -933,12 +940,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     let history_generation = state.history_generation;
                     return Task::perform(
                         async move {
-                            tokio::task::spawn_blocking(move || -> Result<Vec<HistoryEntry>, String> {
-                                let storage = Storage::open_default().map_err(|e| e.to_string())?;
-                                storage.record_history(id, &method, status_code, duration_ms)
-                                    .map_err(|e| e.to_string())?;
-                                storage.recent_history(30).map_err(|e| e.to_string())
-                            })
+                            tokio::task::spawn_blocking(
+                                move || -> Result<Vec<HistoryEntry>, String> {
+                                    let storage =
+                                        Storage::open_default().map_err(|e| e.to_string())?;
+                                    storage
+                                        .record_history(id, &method, status_code, duration_ms)
+                                        .map_err(|e| e.to_string())?;
+                                    storage.recent_history(30).map_err(|e| e.to_string())
+                                },
+                            )
                             .await
                             .map_err(|error| error.to_string())
                             .and_then(|result| result)
@@ -1092,12 +1103,9 @@ fn view(state: &State) -> Element<'_, Message> {
                 button(
                     text(format!(
                         "{} {} · {}ms · {}",
-                        entry.method,
-                        entry.status_code,
-                        entry.duration_ms,
-                        request.name,
+                        entry.method, entry.status_code, entry.duration_ms, request.name,
                     ))
-                    .size(12)
+                    .size(12),
                 )
                 .on_press(Message::OpenRequest(entry.request_id))
                 .width(Length::Fill),

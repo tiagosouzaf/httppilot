@@ -40,13 +40,7 @@ impl Storage {
             "INSERT INTO request_history
                  (request_id, method, status_code, duration_ms, occurred_at_ms)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                request_id,
-                method,
-                status_code,
-                duration_ms,
-                occurred_at_ms
-            ],
+            params![request_id, method, status_code, duration_ms, occurred_at_ms],
         )?;
         transaction.execute(
             "DELETE FROM request_history
