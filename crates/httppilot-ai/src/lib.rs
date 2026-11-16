@@ -118,7 +118,8 @@ impl AiEngine {
             .client
             .post(request.provider.endpoint())
             .bearer_auth(request.api_key.trim())
-            .json(&payload);
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(payload.to_string());
         let builder = match request.provider {
             AiProvider::OpenAi => builder,
             AiProvider::Anthropic => builder.header("anthropic-version", "2026-10-21"),
