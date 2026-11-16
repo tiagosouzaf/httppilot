@@ -1543,6 +1543,7 @@ name = "httppilot-cli"
 version = "0.1.0"
 dependencies = [
  "httppilot-core",
+ "httppilot-storage",
  "tokio",
 ]
 

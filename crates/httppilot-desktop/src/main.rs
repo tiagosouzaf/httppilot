@@ -25,16 +25,18 @@ enum Verb {
     Patch,
     Delete,
     Head,
+    Options,
 }
 
 impl Verb {
-    const ALL: [Verb; 6] = [
+    const ALL: [Verb; 7] = [
         Verb::Get,
         Verb::Post,
         Verb::Put,
         Verb::Patch,
         Verb::Delete,
         Verb::Head,
+        Verb::Options,
     ];
 
     fn parse(method: &str) -> Self {
@@ -44,6 +46,7 @@ impl Verb {
             "PATCH" => Self::Patch,
             "DELETE" => Self::Delete,
             "HEAD" => Self::Head,
+            "OPTIONS" => Self::Options,
             _ => Self::Get,
         }
     }
@@ -58,6 +61,7 @@ impl fmt::Display for Verb {
             Self::Patch => "PATCH",
             Self::Delete => "DELETE",
             Self::Head => "HEAD",
+            Self::Options => "OPTIONS",
         })
     }
 }
@@ -263,6 +267,7 @@ impl State {
 #[derive(Debug, Clone)]
 enum Message {
     NewCollection,
+    RenameCollection(u64, String),
     NewRequest(u64),
     OpenRequest(u64),
     CloseTab(u64),
@@ -323,6 +328,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             state.load_active();
             state.mark_dirty();
+        }
+        Message::RenameCollection(id, name) => {
+            if state.workspace.rename_collection(id, &name) {
+                state.mark_dirty();
+            }
         }
         Message::NewRequest(collection_id) => {
             state.capture_active();
@@ -803,9 +813,12 @@ fn view(state: &State) -> Element<'_, Message> {
     .width(Length::Fixed(220.0));
 
     for collection in &state.workspace.collections {
+        let collection_id = collection.id;
         sidebar = sidebar.push(
             row![
-                text(&collection.name).size(15).width(Length::Fill),
+                text_input("Collection name", &collection.name)
+                    .on_input(move |name| Message::RenameCollection(collection_id, name))
+                    .width(Length::Fill),
                 button("+").on_press(Message::NewRequest(collection.id)),
             ]
             .spacing(4)
@@ -1129,6 +1142,12 @@ fn view(state: &State) -> Element<'_, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn options_method_round_trips_without_becoming_get() {
+        assert!(matches!(Verb::parse("options"), Verb::Options));
+        assert_eq!(Verb::Options.to_string(), "OPTIONS");
+    }
 
     #[tokio::test]
     async fn cancellation_stops_an_in_flight_request() {
