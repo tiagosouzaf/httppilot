@@ -6,7 +6,7 @@ mod dialogs;
 use httppilot_core::{HttpEngine, HttpRequest, HttpResponse, RequestAuth, render_template};
 use httppilot_storage::{
     EnvironmentVariable, Header, HistoryEntry, ImportedCollection, QueryParameter, Storage,
-    Workspace, export_postman_json, import_postman_json, import_openapi_json,
+    Workspace, export_postman_json, import_openapi_json, import_postman_json,
 };
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
@@ -476,8 +476,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.load_active();
                     }
                     state.mark_dirty();
-                    state.postman_status =
-                        format!("Imported {count} requests. Configure environment variables and review URLs for secrets.");
+                    state.postman_status = format!(
+                        "Imported {count} requests. Configure environment variables and review URLs for secrets."
+                    );
                 }
                 Err(error) => state.postman_status = format!("Import failed: {error}"),
             }

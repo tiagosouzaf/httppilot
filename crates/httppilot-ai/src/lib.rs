@@ -365,12 +365,8 @@ mod tests {
 
     #[test]
     fn rejects_non_json_success_bodies() {
-        let error = decode_provider_response(
-            AiProvider::Anthropic,
-            StatusCode::OK,
-            b"not JSON",
-        )
-        .unwrap_err();
+        let error = decode_provider_response(AiProvider::Anthropic, StatusCode::OK, b"not JSON")
+            .unwrap_err();
         assert!(matches!(error, AiError::Json(_)));
     }
 

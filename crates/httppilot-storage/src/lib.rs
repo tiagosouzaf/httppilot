@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod history;
-pub mod postman;
 pub mod openapi;
+pub mod postman;
 pub use history::HistoryEntry;
 pub use openapi::{OpenApiError, import_openapi_json};
 pub use postman::{

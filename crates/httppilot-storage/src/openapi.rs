@@ -158,7 +158,11 @@ fn fill_parameters(
     Ok(())
 }
 
-fn request_body(root: &Value, operation: &Value, headers: &mut Vec<Header>) -> Result<(), OpenApiError> {
+fn request_body(
+    root: &Value,
+    operation: &Value,
+    headers: &mut Vec<Header>,
+) -> Result<(), OpenApiError> {
     let Some(raw) = operation.get("requestBody") else {
         return Ok(());
     };
@@ -196,9 +200,7 @@ fn request_body(root: &Value, operation: &Value, headers: &mut Vec<Header>) -> R
 pub fn import_openapi_json(input: &str) -> Result<ImportedCollection, OpenApiError> {
     let root: Value = serde_json::from_str(input)?;
     let version = root.get("openapi").and_then(Value::as_str).unwrap_or("");
-    if !(version.starts_with("3.0.")
-        || version.starts_with("3.1.")
-        || version.starts_with("3.2."))
+    if !(version.starts_with("3.0.") || version.starts_with("3.1.") || version.starts_with("3.2."))
     {
         return Err(OpenApiError::UnsupportedVersion);
     }
@@ -241,7 +243,11 @@ pub fn import_openapi_json(input: &str) -> Result<ImportedCollection, OpenApiErr
             }
             let operation = resolve(&root, operation)?;
             let host = server_url(&root, path_item, operation)?;
-            let uri = format!("{}{}", host.trim_end_matches('/'), wrap_path_variables(path)?);
+            let uri = format!(
+                "{}{}",
+                host.trim_end_matches('/'),
+                wrap_path_variables(path)?
+            );
             let summary = operation
                 .get("summary")
                 .and_then(Value::as_str)
@@ -278,8 +284,8 @@ pub fn import_openapi_json(input: &str) -> Result<ImportedCollection, OpenApiErr
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn imports_paths_operation_overrides_and_parameter_refs() {
@@ -311,7 +317,13 @@ mod tests {
         assert_eq!(request.name, "Pets / Get pet");
         assert_eq!(request.method, "GET");
         assert_eq!(request.url, "https://api.example.com/v1/pets/{{id}}");
-        assert_eq!(request.query, vec![QueryParameter { name: "limit".into(), value: "{{limit}}".into() }]);
+        assert_eq!(
+            request.query,
+            vec![QueryParameter {
+                name: "limit".into(),
+                value: "{{limit}}".into()
+            }]
+        );
         assert!(request.headers.is_empty());
         let snapshot = format!("{collection:?}");
         assert!(!snapshot.contains("SECRET"));
@@ -336,7 +348,13 @@ mod tests {
         let imported = import_openapi_json(&source.to_string()).unwrap();
         let req = &imported.requests[0];
         assert_eq!(req.url, "https://{{region}}.example.com/api/people");
-        assert_eq!(req.headers, vec![Header { name: "Content-Type".into(), value: "application/json".into() }]);
+        assert_eq!(
+            req.headers,
+            vec![Header {
+                name: "Content-Type".into(),
+                value: "application/json".into()
+            }]
+        );
         assert!(req.body.is_empty());
         assert!(!format!("{imported:?}").contains("SECRET"));
         assert!(!format!("{imported:?}").contains("private-internal"));
