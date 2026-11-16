@@ -7,6 +7,11 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod postman;
+pub use postman::{
+    ImportedCollection, ImportedRequest, PostmanError, export_postman_json, import_postman_json,
+};
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("cannot determine the operating system's local application data directory")]
@@ -121,6 +126,47 @@ impl Workspace {
             id,
             name: format!("Collection {}", self.collections.len() + 1),
             requests: Vec::new(),
+        });
+        id
+    }
+
+    /// Rename a collection without allowing blank names.
+    pub fn rename_collection(&mut self, id: u64, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() {
+            return false;
+        }
+        if let Some(collection) = self.collections.iter_mut().find(|item| item.id == id) {
+            collection.name = name.to_owned();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Append a parsed Postman collection, allocating fresh local IDs.
+    ///
+    /// Existing collections, requests and open tabs are left unchanged.
+    pub fn append_imported_collection(&mut self, imported: ImportedCollection) -> u64 {
+        let id = self.allocate_id();
+        let requests = imported
+            .requests
+            .into_iter()
+            .map(|request| SavedRequest {
+                id: self.allocate_id(),
+                name: request.name,
+                method: request.method,
+                url: request.url,
+                headers: request.headers,
+                query: request.query,
+                body: request.body,
+            })
+            .collect();
+
+        self.collections.push(Collection {
+            id,
+            name: imported.name,
+            requests,
         });
         id
     }
@@ -432,6 +478,36 @@ mod tests {
         let workspace: Workspace = serde_json::from_str(old).unwrap();
         assert!(workspace.environments.is_empty());
         assert_eq!(workspace.active_environment_id, None);
+    }
+
+    #[test]
+    fn imported_collections_get_unique_ids_and_preserve_existing_requests() {
+        let mut workspace = Workspace::default();
+        let collection_id = workspace.append_imported_collection(ImportedCollection {
+            name: "External".into(),
+            requests: vec![ImportedRequest {
+                name: "Get status".into(),
+                method: "GET".into(),
+                url: "https://example.com/status".into(),
+                headers: vec![],
+                query: vec![],
+                body: String::new(),
+            }],
+        });
+        assert_ne!(collection_id, 1);
+        assert_eq!(workspace.request(2).unwrap().name, "Example GET");
+        assert_eq!(workspace.collections.len(), 2);
+        assert!(workspace.collections[1].requests[0].id > collection_id);
+        assert_eq!(workspace.tabs, vec![2]);
+    }
+
+    #[test]
+    fn renaming_collections_rejects_empty_and_unknown_ids() {
+        let mut workspace = Workspace::default();
+        assert!(!workspace.rename_collection(1, "  "));
+        assert!(!workspace.rename_collection(999, "No such collection"));
+        assert!(workspace.rename_collection(1, "  Production  "));
+        assert_eq!(workspace.collections[0].name, "Production");
     }
 
     #[test]
