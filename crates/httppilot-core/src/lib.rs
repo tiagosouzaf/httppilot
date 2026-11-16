@@ -94,6 +94,9 @@ pub enum EngineError {
     #[error("invalid HTTP method: {0}")]
     InvalidMethod(String),
 
+    #[error("invalid request URL: {0}")]
+    InvalidUrl(String),
+
     #[error(transparent)]
     Request(#[from] reqwest::Error),
 }
@@ -127,17 +130,24 @@ impl HttpEngine {
         let method = Method::from_bytes(request.method.as_bytes())
             .map_err(|_| EngineError::InvalidMethod(request.method.clone()))?;
 
+        let mut url = reqwest::Url::parse(&request.url)
+            .map_err(|error| EngineError::InvalidUrl(error.to_string()))?;
+        if !request.query.is_empty() {
+            let mut pairs = url.query_pairs_mut();
+            for (name, value) in request.query {
+                pairs.append_pair(&name, &value);
+            }
+        }
+
         let mut builder = self
             .client
-            .request(method, &request.url)
+            .request(method, url)
             .timeout(Duration::from_secs(30));
 
         for (name, value) in request.headers {
             builder = builder.header(name, value);
         }
-        if !request.query.is_empty() {
-            builder = builder.query(&request.query);
-        }
+
         builder = match request.auth {
             RequestAuth::None => builder,
             RequestAuth::Bearer(token) => builder.bearer_auth(token),
