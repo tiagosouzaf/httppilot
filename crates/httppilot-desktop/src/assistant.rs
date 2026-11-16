@@ -238,11 +238,9 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             return Task::perform(
                 async move {
                     tokio::task::spawn_blocking(move || -> Result<KeyringReply, String> {
-                        let entry = keyring::Entry::new(
-                            "HttpPilot-AI",
-                            provider.keychain_account(),
-                        )
-                        .map_err(|e| e.to_string())?;
+                        let entry =
+                            keyring::Entry::new("HttpPilot-AI", provider.keychain_account())
+                                .map_err(|e| e.to_string())?;
                         match action {
                             0 => {
                                 entry.set_password(&key).map_err(|e| e.to_string())?;
@@ -344,7 +342,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.mcp_status = if state.mcp_enabled {
                 "MCP ativado: servidores podem acessar serviços externos e executar ações. Use apenas MCPs confiáveis.".to_owned()
             } else {
-                "MCP desativado; configuração de servidores não é carregada nas execuções.".to_owned()
+                "MCP desativado; configuração de servidores não é carregada nas execuções."
+                    .to_owned()
             };
         }
         Message::OpenClaudeCode => {
@@ -370,14 +369,15 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
 }
 
 pub fn view(state: &State) -> Element<'_, Message> {
-    let mut layout = column![
+    let mut layout =
+        column![
         text("ASSISTENTE IA").size(20),
         text("API ou assinatura do ChatGPT via Codex CLI. Somente o texto digitado aqui e enviado.")
             .size(12),
         pick_list(Backend::ALL, Some(state.backend), Message::BackendChanged),
     ]
-    .spacing(10)
-    .width(Length::Fill);
+        .spacing(10)
+        .width(Length::Fill);
 
     match state.backend {
         Backend::CodexSubscription => {
@@ -406,15 +406,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
             );
             layout = layout.push(text(&state.mcp_status).size(12));
             if !state.mcp_servers.is_empty() {
-                layout = layout.push(
-                    text(format!("Servidores: {}", state.mcp_servers.join(", "))).size(12),
-                );
+                layout = layout
+                    .push(text(format!("Servidores: {}", state.mcp_servers.join(", "))).size(12));
             }
         }
         Backend::OpenAiApi | Backend::ClaudeApi => {
-            layout = layout.push(
-                text_input("ID do modelo", &state.model).on_input(Message::ModelChanged),
-            );
+            layout = layout
+                .push(text_input("ID do modelo", &state.model).on_input(Message::ModelChanged));
             layout = layout.push(
                 text_input("Chave de API (não salva no SQLite)", &state.api_key)
                     .secure(true)
@@ -437,10 +435,12 @@ pub fn view(state: &State) -> Element<'_, Message> {
         }
     }
 
-    layout = layout.push(text_editor(&state.prompt)
-        .placeholder("Digite uma pergunta, por exemplo: explique este código HTTP...")
-        .on_action(Message::PromptEdited)
-        .height(Length::Fixed(155.0)));
+    layout = layout.push(
+        text_editor(&state.prompt)
+            .placeholder("Digite uma pergunta, por exemplo: explique este código HTTP...")
+            .on_action(Message::PromptEdited)
+            .height(Length::Fixed(155.0)),
+    );
 
     if state.busy {
         layout = layout.push(text("Consultando...").size(12));
@@ -461,10 +461,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     layout = layout.push(text("Claude por assinatura: abra o Claude Code oficial (sem integrar credenciais ao HttpPilot).").size(12));
     layout = layout.push(button("Abrir Claude Code oficial").on_press(Message::OpenClaudeCode));
 
-    container(layout)
-        .padding(14)
-        .width(Length::Fill)
-        .into()
+    container(layout).padding(14).width(Length::Fill).into()
 }
 
 #[cfg(test)]

@@ -135,7 +135,10 @@ impl AiEngine {
         }
         let root: Value = serde_json::from_slice(&bytes)?;
         if !status.is_success() {
-            return Err(AiError::HttpStatus(status.as_u16(), provider_error(&root, status)));
+            return Err(AiError::HttpStatus(
+                status.as_u16(),
+                provider_error(&root, status),
+            ));
         }
 
         let content = parse_answer(request.provider, &root)?;
@@ -182,15 +185,19 @@ fn payload_for(request: &AiRequest) -> Value {
 fn parse_answer(provider: AiProvider, root: &Value) -> Result<String, AiError> {
     let texts = match provider {
         AiProvider::OpenAi => root.get("output").and_then(Value::as_array).map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(|item| item.get("content").and_then(Value::as_array))
                 .flatten()
-                .filter(|content| content.get("type").and_then(Value::as_str) == Some("output_text"))
+                .filter(|content| {
+                    content.get("type").and_then(Value::as_str) == Some("output_text")
+                })
                 .filter_map(|content| content.get("text").and_then(Value::as_str))
                 .collect::<Vec<_>>()
         }),
         AiProvider::Anthropic => root.get("content").and_then(Value::as_array).map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter(|content| content.get("type").and_then(Value::as_str) == Some("text"))
                 .filter_map(|content| content.get("text").and_then(Value::as_str))
                 .collect::<Vec<_>>()
@@ -238,7 +245,10 @@ mod tests {
         assert_eq!(json["store"], false);
         assert_eq!(json["input"], "Show the HTTP response status");
         assert!(json.get("messages").is_none());
-        assert_eq!(request.provider.endpoint(), "https://api.openai.com/v1/responses");
+        assert_eq!(
+            request.provider.endpoint(),
+            "https://api.openai.com/v1/responses"
+        );
         assert_eq!(request.provider.keychain_account(), "openai-api-key");
         assert!(!json.to_string().contains("do-not-log-secret"));
     }
@@ -248,8 +258,14 @@ mod tests {
         let request = input(AiProvider::Anthropic);
         let json = payload_for(&request);
         assert_eq!(json["messages"][0]["role"], "user");
-        assert_eq!(json["messages"][0]["content"], "Show the HTTP response status");
-        assert_eq!(request.provider.endpoint(), "https://api.anthropic.com/v1/messages");
+        assert_eq!(
+            json["messages"][0]["content"],
+            "Show the HTTP response status"
+        );
+        assert_eq!(
+            request.provider.endpoint(),
+            "https://api.anthropic.com/v1/messages"
+        );
         assert!(json.get("store").is_none());
         assert!(!json.to_string().contains("do-not-log-secret"));
     }
@@ -275,7 +291,10 @@ mod tests {
             {"type": "thinking", "thinking": "internal"},
             {"type": "text", "text": "Response"}
         ]});
-        assert_eq!(parse_answer(AiProvider::Anthropic, &value).unwrap(), "Response");
+        assert_eq!(
+            parse_answer(AiProvider::Anthropic, &value).unwrap(),
+            "Response"
+        );
     }
 
     #[test]

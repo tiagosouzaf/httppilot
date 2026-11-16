@@ -5,29 +5,26 @@
 //! read-only sandbox. Explicit opt-in enables the CLI's existing MCP config.
 //! MCP tools may have remote side effects outside of the CLI filesystem sandbox.
 
-use std::{
-    io,
-    process::Stdio,
-    time::Duration,
-};
+use std::{io, process::Stdio, time::Duration};
 
 use serde_json::Value;
 use thiserror::Error;
-use tokio::{
-    io::AsyncWriteExt,
-    process::Command,
-};
+use tokio::{io::AsyncWriteExt, process::Command};
 
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 const MAX_PROMPT_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Error)]
 pub enum LocalCliError {
-    #[error("Codex CLI is not installed or not available on PATH. Install the official CLI and run: codex login")]
+    #[error(
+        "Codex CLI is not installed or not available on PATH. Install the official CLI and run: codex login"
+    )]
     CodexUnavailable,
     #[error("Codex CLI is not signed in to ChatGPT. Run: codex login")]
     SignInRequired,
-    #[error("Codex CLI is authenticated with an API key, not a ChatGPT subscription. Run: codex logout && codex login")]
+    #[error(
+        "Codex CLI is authenticated with an API key, not a ChatGPT subscription. Run: codex logout && codex login"
+    )]
     NotSubscription,
     #[error("Could not confirm the Codex authentication method. Run: codex login status")]
     UnknownAuthentication,
@@ -142,11 +139,11 @@ pub async fn ask_codex_subscription(
         drop(stdin);
     }
 
-    let output = match tokio::time::timeout(Duration::from_secs(120), child.wait_with_output()).await
-    {
-        Ok(result) => result?,
-        Err(_) => return Err(LocalCliError::CodexTimedOut),
-    };
+    let output =
+        match tokio::time::timeout(Duration::from_secs(120), child.wait_with_output()).await {
+            Ok(result) => result?,
+            Err(_) => return Err(LocalCliError::CodexTimedOut),
+        };
     if !output.status.success() {
         return Err(LocalCliError::CodexFailed);
     }
@@ -266,7 +263,10 @@ mod tests {
             CodexAuth::ApiKey
         );
         assert_eq!(classify_login_status(false, ""), CodexAuth::NotSignedIn);
-        assert_eq!(classify_login_status(true, "unknown mode"), CodexAuth::Unknown);
+        assert_eq!(
+            classify_login_status(true, "unknown mode"),
+            CodexAuth::Unknown
+        );
     }
 
     #[test]
