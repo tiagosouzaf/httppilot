@@ -396,130 +396,130 @@ fn view(state: &State) -> Element<'_, Message> {
         }
     }
 
-    let main_content: Element<'_, Message> =
-        if state.workspace.active_request_id.is_some() {
-            let mut send_button = button(if state.sending { "Sending..." } else { "Send" });
-            if !state.sending {
-                send_button = send_button.on_press(Message::Send);
-            }
+    let main_content: Element<'_, Message> = if state.workspace.active_request_id.is_some() {
+        let mut send_button = button(if state.sending { "Sending..." } else { "Send" });
+        if !state.sending {
+            send_button = send_button.on_press(Message::Send);
+        }
 
-            let mut save_button = button(if state.saving { "Saving..." } else { "Save" });
-            if !state.saving {
-                save_button = save_button.on_press(Message::Save);
-            }
+        let mut save_button = button(if state.saving { "Saving..." } else { "Save" });
+        if !state.saving {
+            save_button = save_button.on_press(Message::Save);
+        }
 
-            let request_bar = row![
-                pick_list(Verb::ALL, Some(state.verb), Message::VerbChanged),
-                text_input("https://api.example.com/resource", &state.url)
-                    .on_input(Message::UrlChanged)
-                    .on_submit(Message::Send)
-                    .padding(10)
-                    .width(Length::Fill),
-                send_button,
-                save_button,
-            ]
-            .align_y(Alignment::Center)
-            .spacing(8);
+        let request_bar = row![
+            pick_list(Verb::ALL, Some(state.verb), Message::VerbChanged),
+            text_input("https://api.example.com/resource", &state.url)
+                .on_input(Message::UrlChanged)
+                .on_submit(Message::Send)
+                .padding(10)
+                .width(Length::Fill),
+            send_button,
+            save_button,
+        ]
+        .align_y(Alignment::Center)
+        .spacing(8);
 
-            let mut headers = column![
-                text("HEADERS").size(16),
-                text("Name / Value").size(12),
-            ]
-            .spacing(8);
+        let mut headers =
+            column![text("HEADERS").size(16), text("Name / Value").size(12),].spacing(8);
 
-            for (index, header) in state.headers.iter().enumerate() {
-                headers = headers.push(
-                    row![
-                        text_input("Header name", &header.name)
-                            .on_input(move |value| Message::HeaderNameChanged(index, value))
-                            .width(Length::FillPortion(2)),
-                        text_input("Value", &header.value)
-                            .on_input(move |value| Message::HeaderValueChanged(index, value))
-                            .width(Length::FillPortion(3)),
-                        button("Remove").on_press(Message::RemoveHeader(index)),
-                    ]
-                    .spacing(8),
-                );
-            }
-
+        for (index, header) in state.headers.iter().enumerate() {
             headers = headers.push(
                 row![
-                    text_input("New header", &state.new_header_name)
-                        .on_input(Message::NewHeaderName)
+                    text_input("Header name", &header.name)
+                        .on_input(move |value| Message::HeaderNameChanged(index, value))
                         .width(Length::FillPortion(2)),
-                    text_input("Value", &state.new_header_value)
-                        .on_input(Message::NewHeaderValue)
+                    text_input("Value", &header.value)
+                        .on_input(move |value| Message::HeaderValueChanged(index, value))
                         .width(Length::FillPortion(3)),
-                    button("Add").on_press(Message::AddHeader),
+                    button("Remove").on_press(Message::RemoveHeader(index)),
                 ]
                 .spacing(8),
             );
+        }
 
-            let response_summary = match &state.response {
-                Some(response) => format!(
-                    "HTTP {} | {} ms | {} preview bytes{}",
-                    response.status,
-                    response.elapsed.as_millis(),
-                    response.preview_bytes,
-                    if response.truncated { " (truncated)" } else { "" }
-                ),
-                None if state.sending => "Sending request...".to_owned(),
-                None if state.error.is_some() => "Request failed".to_owned(),
-                None => "Ready to send a request".to_owned(),
-            };
-
-            let response_text = state
-                .response
-                .as_ref()
-                .map(|response| response.body_preview.as_str())
-                .or(state.error.as_deref())
-                .unwrap_or("Response body will appear here.");
-
-            let body_editor = text_editor(&state.body)
-                .placeholder("Request body (JSON or plain text)")
-                .on_action(Message::BodyEdited)
-                .height(Length::Fixed(150.0));
-
-            let main = column![
-                tabs,
-                text_input("Request name", &state.name)
-                    .on_input(Message::NameChanged)
-                    .padding(10),
-                request_bar,
-                headers,
-                text("BODY").size(16),
-                body_editor,
-                text("RESPONSE").size(16),
-                text(response_summary).size(14),
-                container(text(response_text).font(Font::MONOSPACE).size(13))
-                    .padding(12)
-                    .width(Length::Fill),
-                text(&state.save_status).size(12),
+        headers = headers.push(
+            row![
+                text_input("New header", &state.new_header_name)
+                    .on_input(Message::NewHeaderName)
+                    .width(Length::FillPortion(2)),
+                text_input("Value", &state.new_header_value)
+                    .on_input(Message::NewHeaderValue)
+                    .width(Length::FillPortion(3)),
+                button("Add").on_press(Message::AddHeader),
             ]
-            .spacing(12)
-            .padding(16)
-            .width(Length::Fill);
+            .spacing(8),
+        );
 
-            container(scrollable(main))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            container(
-                column![
-                    tabs,
-                    text("No request is open").size(20),
-                    text("Choose a request from the collections on the left."),
-                    button("Save workspace").on_press(Message::Save),
-                    text(&state.save_status).size(12),
-                ]
-                .spacing(14)
-                .padding(16),
-            )
+        let response_summary = match &state.response {
+            Some(response) => format!(
+                "HTTP {} | {} ms | {} preview bytes{}",
+                response.status,
+                response.elapsed.as_millis(),
+                response.preview_bytes,
+                if response.truncated {
+                    " (truncated)"
+                } else {
+                    ""
+                }
+            ),
+            None if state.sending => "Sending request...".to_owned(),
+            None if state.error.is_some() => "Request failed".to_owned(),
+            None => "Ready to send a request".to_owned(),
+        };
+
+        let response_text = state
+            .response
+            .as_ref()
+            .map(|response| response.body_preview.as_str())
+            .or(state.error.as_deref())
+            .unwrap_or("Response body will appear here.");
+
+        let body_editor = text_editor(&state.body)
+            .placeholder("Request body (JSON or plain text)")
+            .on_action(Message::BodyEdited)
+            .height(Length::Fixed(150.0));
+
+        let main = column![
+            tabs,
+            text_input("Request name", &state.name)
+                .on_input(Message::NameChanged)
+                .padding(10),
+            request_bar,
+            headers,
+            text("BODY").size(16),
+            body_editor,
+            text("RESPONSE").size(16),
+            text(response_summary).size(14),
+            container(text(response_text).font(Font::MONOSPACE).size(13))
+                .padding(12)
+                .width(Length::Fill),
+            text(&state.save_status).size(12),
+        ]
+        .spacing(12)
+        .padding(16)
+        .width(Length::Fill);
+
+        container(scrollable(main))
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
-        };
+    } else {
+        container(
+            column![
+                tabs,
+                text("No request is open").size(20),
+                text("Choose a request from the collections on the left."),
+                button("Save workspace").on_press(Message::Save),
+                text(&state.save_status).size(12),
+            ]
+            .spacing(14)
+            .padding(16),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    };
 
     row![sidebar, main_content].height(Length::Fill).into()
 }

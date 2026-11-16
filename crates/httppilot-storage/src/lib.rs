@@ -95,7 +95,10 @@ impl Workspace {
         }
 
         let id = self.allocate_id();
-        let collection = self.collections.iter_mut().find(|c| c.id == collection_id)?;
+        let collection = self
+            .collections
+            .iter_mut()
+            .find(|c| c.id == collection_id)?;
         collection.requests.push(SavedRequest {
             id,
             name: format!("New Request {}", collection.requests.len() + 1),
@@ -187,7 +190,9 @@ impl Storage {
         // For now, explicitly omit common secret-bearing headers.
         for collection in &mut sanitized.collections {
             for request in &mut collection.requests {
-                request.headers.retain(|header| !is_sensitive_header(&header.name));
+                request
+                    .headers
+                    .retain(|header| !is_sensitive_header(&header.name));
             }
         }
 
