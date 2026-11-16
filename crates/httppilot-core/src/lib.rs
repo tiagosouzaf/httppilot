@@ -103,7 +103,10 @@ impl HttpEngine {
             .headers()
             .iter()
             .map(|(key, value)| {
-                (key.to_string(), String::from_utf8_lossy(value.as_bytes()).into_owned())
+                (
+                    key.to_string(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
             })
             .collect();
 

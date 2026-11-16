@@ -24,7 +24,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         response.status,
         response.elapsed.as_millis(),
         response.preview_bytes,
-        if response.truncated { ", truncated" } else { "" },
+        if response.truncated {
+            ", truncated"
+        } else {
+            ""
+        },
     );
     println!("{}", response.body_preview);
     Ok(())

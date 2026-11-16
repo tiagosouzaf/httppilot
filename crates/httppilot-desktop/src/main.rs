@@ -1,7 +1,9 @@
 use std::fmt;
 
 use httppilot_core::{HttpEngine, HttpRequest, HttpResponse};
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_editor, text_input};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
+};
 use iced::{Alignment, Element, Font, Length, Task, Theme};
 
 fn main() -> iced::Result {
@@ -93,7 +95,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             let body = state.body.text();
             if !body.trim().is_empty() && state.verb != Verb::Get && state.verb != Verb::Head {
                 request.body = Some(body);
-                request.headers.push(("Content-Type".to_owned(), "application/json".to_owned()));
+                request
+                    .headers
+                    .push(("Content-Type".to_owned(), "application/json".to_owned()));
             }
 
             state.sending = true;
@@ -102,7 +106,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 
             let engine = state.engine.clone();
             return Task::perform(
-                async move { engine.execute(request).await.map_err(|error| error.to_string()) },
+                async move {
+                    engine
+                        .execute(request)
+                        .await
+                        .map_err(|error| error.to_string())
+                },
                 Message::Completed,
             );
         }
@@ -149,7 +158,11 @@ fn view(state: &State) -> Element<'_, Message> {
 
     let response_summary = match &state.response {
         Some(response) => {
-            let truncated = if response.truncated { " - preview truncated" } else { "" };
+            let truncated = if response.truncated {
+                " - preview truncated"
+            } else {
+                ""
+            };
             format!(
                 "HTTP {} | {} ms | {} preview bytes{}",
                 response.status,
