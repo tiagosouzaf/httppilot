@@ -1,4 +1,4 @@
-//! Platform file pickers for Postman JSON documents.
+//! Platform file pickers for Postman and OpenAPI JSON documents.
 //!
 //! No WebView or added runtime dependency is needed. On Linux, invoke a
 //! system-installed Zenity or KDialog native picker; users can also paste a
@@ -34,7 +34,7 @@ pub fn select_json_file(save: bool) -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
         let mut zenity = Command::new("zenity");
-        zenity.args(["--file-selection", "--title=Postman collection JSON"]);
+        zenity.args(["--file-selection", "--title=Postman or OpenAPI JSON"]);
         zenity.arg("--file-filter=JSON files | *.json");
         if save {
             zenity.arg("--save");
