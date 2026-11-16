@@ -76,7 +76,8 @@ fn classify_login_status(success: bool, raw: &str) -> CodexAuth {
     let lower = raw.to_ascii_lowercase();
     if lower.contains("api key") || lower.contains("api_key") {
         CodexAuth::ApiKey
-    } else if lower.contains("logged in using chatgpt") || lower.contains("logged in with chatgpt") {
+    } else if lower.contains("logged in using chatgpt") || lower.contains("logged in with chatgpt")
+    {
         CodexAuth::ChatGptSubscription
     } else {
         CodexAuth::Unknown
@@ -170,7 +171,10 @@ pub async fn ask_codex_subscription(
             drop(stdin);
         }
 
-        let output = child.stdout.take().ok_or(LocalCliError::InvalidCodexOutput)?;
+        let output = child
+            .stdout
+            .take()
+            .ok_or(LocalCliError::InvalidCodexOutput)?;
         let mut reader = output.take((MAX_OUTPUT_BYTES as u64) + 1);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
@@ -227,7 +231,10 @@ fn build_mcp_overrides(
 /// stream; raw logs and tool results may contain secrets and are never shown.
 fn parse_codex_final_answer(events: &[u8]) -> Result<String, LocalCliError> {
     let mut answer = None;
-    for line in events.split(|b| *b == b'\n').filter(|line| !line.is_empty()) {
+    for line in events
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+    {
         let event: Value =
             serde_json::from_slice(line).map_err(|_| LocalCliError::InvalidCodexOutput)?;
         if event.get("type").and_then(Value::as_str) == Some("item.completed")

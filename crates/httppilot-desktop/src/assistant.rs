@@ -434,10 +434,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 } else {
                     format!("[Não selecionado] {name}")
                 };
-                layout = layout.push(
-                    button(text(label))
-                        .on_press(Message::McpToggleServer(name.clone())),
-                );
+                layout = layout
+                    .push(button(text(label)).on_press(Message::McpToggleServer(name.clone())));
             }
         }
         Backend::OpenAiApi | Backend::ClaudeApi => {
