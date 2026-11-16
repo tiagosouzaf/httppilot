@@ -1,7 +1,12 @@
-use std::fmt;
+use std::{fmt, io::Write};
+
+mod dialogs;
 
 use httppilot_core::{HttpEngine, HttpRequest, HttpResponse, RequestAuth, render_template};
-use httppilot_storage::{EnvironmentVariable, Header, QueryParameter, Storage, Workspace};
+use httppilot_storage::{
+    EnvironmentVariable, Header, HistoryEntry, ImportedCollection, QueryParameter, Storage,
+    Workspace, export_postman_json, import_postman_json,
+};
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, text, text_editor, text_input,
 };
@@ -130,6 +135,12 @@ struct State {
     response: Option<HttpResponse>,
     error: Option<String>,
     save_status: String,
+    postman_path: String,
+    postman_status: String,
+    postman_busy: bool,
+    history: Vec<HistoryEntry>,
+    history_status: String,
+    history_generation: u64,
     dirty: bool,
     saving: bool,
     revision: i64,
@@ -165,6 +176,10 @@ impl Default for State {
                 ),
             };
 
+        let history = Storage::open_default()
+            .and_then(|storage| storage.recent_history(30))
+            .unwrap_or_default();
+
         let mut state = Self {
             workspace,
             name: String::new(),
@@ -187,6 +202,12 @@ impl Default for State {
             response: None,
             error: None,
             save_status,
+            postman_path: String::new(),
+            postman_status: "Choose a Postman Collection v2.1 JSON file".to_owned(),
+            postman_busy: false,
+            history,
+            history_status: String::new(),
+            history_generation: 0,
             dirty,
             saving: false,
             revision,
@@ -267,6 +288,16 @@ impl State {
 #[derive(Debug, Clone)]
 enum Message {
     NewCollection,
+    PostmanPathChanged(String),
+    PickPostmanFile(bool),
+    PostmanFilePicked(Result<Option<String>, String>),
+    ImportPostman,
+    PostmanImported(Result<ImportedCollection, String>),
+    ExportPostman(u64),
+    PostmanExported(Result<String, String>),
+    HistoryRecorded(u64, Result<Vec<HistoryEntry>, String>),
+    ClearHistory,
+    HistoryCleared(Result<(), String>),
     RenameCollection(u64, String),
     NewRequest(u64),
     OpenRequest(u64),
@@ -328,6 +359,183 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             state.load_active();
             state.mark_dirty();
+        }
+        Message::PostmanPathChanged(path) => {
+            state.postman_path = path;
+        }
+        Message::PickPostmanFile(save) => {
+            if state.postman_busy {
+                return Task::none();
+            }
+            state.postman_busy = true;
+            state.postman_status = "Opening native file chooser...".to_owned();
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || dialogs::select_json_file(save))
+                        .await
+                        .map_err(|error| error.to_string())
+                        .and_then(|result| result)
+                },
+                Message::PostmanFilePicked,
+            );
+        }
+        Message::PostmanFilePicked(result) => {
+            state.postman_busy = false;
+            match result {
+                Ok(Some(path)) => {
+                    state.postman_path = path;
+                    state.postman_status = "File selected. Choose Import or Export.".to_owned();
+                }
+                Ok(None) => state.postman_status = "File selection cancelled".to_owned(),
+                Err(error) => {
+                    state.postman_status =
+                        format!("File chooser unavailable ({error}); enter a path manually");
+                }
+            }
+        }
+        Message::ImportPostman => {
+            if state.postman_busy {
+                return Task::none();
+            }
+            let path = state.postman_path.trim().to_owned();
+            if path.is_empty() {
+                state.postman_status = "Choose a JSON file or enter its path".to_owned();
+                return Task::none();
+            }
+            state.postman_busy = true;
+            state.postman_status = "Importing Postman collection...".to_owned();
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || -> Result<ImportedCollection, String> {
+                        let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+                        if metadata.len() > 10 * 1024 * 1024 {
+                            return Err("Postman import exceeds the 10 MiB limit".to_owned());
+                        }
+                        let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                        import_postman_json(&json).map_err(|e| e.to_string())
+                    })
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result)
+                },
+                Message::PostmanImported,
+            );
+        }
+        Message::PostmanImported(result) => {
+            state.postman_busy = false;
+            match result {
+                Ok(collection) => {
+                    let count = collection.requests.len();
+                    state.capture_active();
+                    let id = state.workspace.append_imported_collection(collection);
+                    if let Some(request_id) = state.workspace.collections
+                        .iter()
+                        .find(|collection| collection.id == id)
+                        .and_then(|collection| collection.requests.first())
+                        .map(|request| request.id)
+                    {
+                        state.workspace.open_request(request_id);
+                        state.load_active();
+                    }
+                    state.mark_dirty();
+                    state.postman_status = format!(
+                        "Imported {count} requests. Review URLs and bodies for secrets."
+                    );
+                }
+                Err(error) => state.postman_status = format!("Import failed: {error}"),
+            }
+        }
+        Message::ExportPostman(collection_id) => {
+            if state.postman_busy {
+                return Task::none();
+            }
+            let Some(collection) = state.workspace.collections
+                .iter()
+                .find(|collection| collection.id == collection_id)
+                .cloned()
+            else {
+                state.postman_status = "Collection no longer exists".to_owned();
+                return Task::none();
+            };
+            let path = state.postman_path.trim().to_owned();
+            if path.is_empty() {
+                state.postman_status = "Choose a destination or enter a new file path".to_owned();
+                return Task::none();
+            }
+
+            // Export the live workspace snapshot, including unsaved editor changes.
+            state.capture_active();
+            let collection = state.workspace.collections
+                .iter()
+                .find(|item| item.id == collection_id)
+                .cloned()
+                .unwrap_or(collection);
+
+            state.postman_busy = true;
+            state.postman_status = "Exporting collection...".to_owned();
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || -> Result<String, String> {
+                        let json = export_postman_json(&collection).map_err(|e| e.to_string())?;
+                        let mut options = std::fs::OpenOptions::new();
+                        options.write(true).create_new(true);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::OpenOptionsExt;
+                            options.mode(0o600);
+                        }
+                        let mut output = options.open(&path).map_err(|e| e.to_string())?;
+                        output.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+                        Ok(path)
+                    })
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result)
+                },
+                Message::PostmanExported,
+            );
+        }
+        Message::PostmanExported(result) => {
+            state.postman_busy = false;
+            state.postman_status = match result {
+                Ok(path) => format!(
+                    "Exported to {path}. Review the JSON for sensitive URLs and bodies."
+                ),
+                Err(error) => format!("Export failed: {error}"),
+            };
+        }
+        Message::HistoryRecorded(generation, result) => {
+            if generation == state.history_generation {
+                match result {
+                    Ok(entries) => state.history = entries,
+                    Err(error) => state.history_status = format!("History error: {error}"),
+                }
+            }
+        }
+        Message::ClearHistory => {
+            state.history_generation = state.history_generation.wrapping_add(1);
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        Storage::open_default()
+                            .and_then(|storage| storage.clear_history())
+                            .map_err(|error| error.to_string())
+                    })
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result)
+                },
+                Message::HistoryCleared,
+            );
+        }
+        Message::HistoryCleared(result) => {
+            match result {
+                Ok(()) => {
+                    state.history.clear();
+                    state.history_status = "History cleared".to_owned();
+                }
+                Err(error) => state.history_status = format!("Could not clear history: {error}"),
+            }
         }
         Message::RenameCollection(id, name) => {
             if state.workspace.rename_collection(id, &name) {
@@ -714,7 +922,30 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 return Task::none();
             }
             match result {
-                Ok(response) => state.response = Some(response),
+                Ok(response) => {
+                    let status_code = response.status;
+                    let duration_ms = response.elapsed.as_millis().min(u64::MAX as u128) as u64;
+                    let method = state.workspace.request(id)
+                        .map(|request| request.method.clone())
+                        .unwrap_or_else(|| state.verb.to_string());
+                    state.response = Some(response);
+                    state.history_generation = state.history_generation.wrapping_add(1);
+                    let history_generation = state.history_generation;
+                    return Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || -> Result<Vec<HistoryEntry>, String> {
+                                let storage = Storage::open_default().map_err(|e| e.to_string())?;
+                                storage.record_history(id, &method, status_code, duration_ms)
+                                    .map_err(|e| e.to_string())?;
+                                storage.recent_history(30).map_err(|e| e.to_string())
+                            })
+                            .await
+                            .map_err(|error| error.to_string())
+                            .and_then(|result| result)
+                        },
+                        move |result| Message::HistoryRecorded(history_generation, result),
+                    );
+                }
                 Err(error) => state.error = Some(error),
             }
         }
@@ -820,6 +1051,7 @@ fn view(state: &State) -> Element<'_, Message> {
                     .on_input(move |name| Message::RenameCollection(collection_id, name))
                     .width(Length::Fill),
                 button("+").on_press(Message::NewRequest(collection.id)),
+                button("Export").on_press(Message::ExportPostman(collection.id)),
             ]
             .spacing(4)
             .align_y(Alignment::Center),
@@ -832,6 +1064,48 @@ fn view(state: &State) -> Element<'_, Message> {
                     .width(Length::Fill),
             );
         }
+    }
+
+    sidebar = sidebar.push(text("POSTMAN v2.1").size(14));
+    sidebar = sidebar.push(
+        text_input("Path to collection.json", &state.postman_path)
+            .on_input(Message::PostmanPathChanged),
+    );
+    let mut file_buttons = row![
+        button("Open file").on_press(Message::PickPostmanFile(false)),
+        button("Save as").on_press(Message::PickPostmanFile(true)),
+    ]
+    .spacing(4);
+    if state.postman_busy {
+        file_buttons = row![text("Working...")].spacing(4);
+    }
+    sidebar = sidebar.push(file_buttons);
+    if !state.postman_busy {
+        sidebar = sidebar.push(button("Import collection").on_press(Message::ImportPostman));
+    }
+    sidebar = sidebar.push(text(&state.postman_status).size(11));
+    sidebar = sidebar.push(text("History (metadata only)").size(14));
+    sidebar = sidebar.push(button("Clear history").on_press(Message::ClearHistory));
+    for entry in &state.history {
+        if let Some(request) = state.workspace.request(entry.request_id) {
+            sidebar = sidebar.push(
+                button(
+                    text(format!(
+                        "{} {} · {}ms · {}",
+                        entry.method,
+                        entry.status_code,
+                        entry.duration_ms,
+                        request.name,
+                    ))
+                    .size(12)
+                )
+                .on_press(Message::OpenRequest(entry.request_id))
+                .width(Length::Fill),
+            );
+        }
+    }
+    if !state.history_status.is_empty() {
+        sidebar = sidebar.push(text(&state.history_status).size(11));
     }
 
     sidebar = sidebar.push(text("ENVIRONMENTS").size(14));
