@@ -75,6 +75,7 @@ pub enum Message {
     ScanMcp,
     McpScanned(Result<Vec<String>, String>),
     ToggleMcp,
+    McpToggleServer(String),
     OpenClaudeCode,
     ClaudeCodeOpened(Result<(), String>),
 }
@@ -108,6 +109,7 @@ pub struct State {
     send_generation: u64,
     mcp_enabled: bool,
     mcp_servers: Vec<String>,
+    mcp_selected: Vec<String>,
     mcp_status: String,
 }
 
@@ -126,6 +128,7 @@ impl Default for State {
             send_generation: 0,
             mcp_enabled: false,
             mcp_servers: Vec::new(),
+            mcp_selected: Vec::new(),
             mcp_status: "MCP desativado por padrão.".to_owned(),
         }
     }
@@ -169,12 +172,16 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             let backend = state.backend;
             let model = state.model.clone();
             let key = state.api_key.clone();
-            let use_mcp = state.mcp_enabled;
+            let selected_mcp = if state.mcp_enabled {
+                state.mcp_selected.clone()
+            } else {
+                Vec::new()
+            };
             return Task::perform(
                 async move {
                     match backend {
                         Backend::CodexSubscription => {
-                            local::ask_codex_subscription(&prompt, use_mcp)
+                            local::ask_codex_subscription(&prompt, &selected_mcp)
                                 .await
                                 .map_err(|e| e.to_string())
                         }
@@ -333,6 +340,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 } else {
                     format!("{} MCP(s) configurado(s).", names.len())
                 };
+                state.mcp_selected.retain(|name| names.contains(name));
                 state.mcp_servers = names;
             }
             Err(error) => state.mcp_status = format!("MCP: {error}"),
@@ -340,11 +348,25 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::ToggleMcp => {
             state.mcp_enabled = !state.mcp_enabled;
             state.mcp_status = if state.mcp_enabled {
-                "MCP ativado: servidores podem acessar serviços externos e executar ações. Use apenas MCPs confiáveis.".to_owned()
+                "MCP ativado: selecione explicitamente os servidores autorizados abaixo. Ferramentas remotas podem executar ações.".to_owned()
             } else {
                 "MCP desativado; configuração de servidores não é carregada nas execuções."
                     .to_owned()
             };
+        }
+        Message::McpToggleServer(name) => {
+            if state.mcp_servers.contains(&name) {
+                if state.mcp_selected.contains(&name) {
+                    state.mcp_selected.retain(|selected| selected != &name);
+                } else {
+                    state.mcp_selected.push(name);
+                }
+                state.mcp_status = format!(
+                    "{} de {} MCP(s) selecionado(s) para uso quando MCP estiver ligado.",
+                    state.mcp_selected.len(),
+                    state.mcp_servers.len()
+                );
+            }
         }
         Message::OpenClaudeCode => {
             state.status = "Abrindo aplicativo Claude Code oficial...".to_owned();
@@ -401,13 +423,21 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 .on_press(Message::ToggleMcp),
             );
             layout = layout.push(
-                text("Ativar MCP concede acesso aos servidores configurados no Codex; algumas ferramentas podem modificar serviços externos. Não é permitido presumir que o sandbox bloqueie ações remotas.")
+                text("Selecione servidores individualmente. Os demais serão desativados para esta consulta. MCPs autorizados ainda podem alterar sistemas externos, mesmo em sandbox read-only.")
                     .size(12),
             );
             layout = layout.push(text(&state.mcp_status).size(12));
-            if !state.mcp_servers.is_empty() {
-                layout = layout
-                    .push(text(format!("Servidores: {}", state.mcp_servers.join(", "))).size(12));
+            for name in &state.mcp_servers {
+                let selected = state.mcp_selected.contains(name);
+                let label = if selected {
+                    format!("[Selecionado] {name}")
+                } else {
+                    format!("[Não selecionado] {name}")
+                };
+                layout = layout.push(
+                    button(text(label))
+                        .on_press(Message::McpToggleServer(name.clone())),
+                );
             }
         }
         Backend::OpenAiApi | Backend::ClaudeApi => {
@@ -493,6 +523,20 @@ mod tests {
         assert!(!state.mcp_enabled);
         let _ = update(&mut state, Message::ToggleMcp);
         assert!(state.mcp_enabled);
+    }
+
+    #[test]
+    fn only_explicit_mcp_server_selection_is_retained() {
+        let mut state = State::default();
+        let _ = update(
+            &mut state,
+            Message::McpScanned(Ok(vec!["github".into(), "database".into()])),
+        );
+        assert!(state.mcp_selected.is_empty());
+        let _ = update(&mut state, Message::McpToggleServer("github".into()));
+        assert_eq!(state.mcp_selected, vec!["github"]);
+        let _ = update(&mut state, Message::McpScanned(Ok(vec!["database".into()])));
+        assert!(state.mcp_selected.is_empty());
     }
 
     #[test]
