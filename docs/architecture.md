@@ -2,60 +2,62 @@
 
 ## Goals
 
-HttpPilot is a native, cross-platform HTTP API client with predictable resource usage. All application logic is written in Rust; the desktop uses Iced, not Chromium or a WebView.
+HttpPilot is a native, cross-platform API client for Windows and Linux. The entire desktop is built in Rust using Iced, without Electron, Chromium, or a WebView.
 
-## Modules
+## Workspace modules
 
-- **httppilot-core:** HTTP request execution, reusable connection pool, timeout, bounded response preview. Independent of the GUI.
-- **httppilot-storage:** collections, requests, tabs, environments and query parameters, SQLite persistence, OS-specific local data directory.
-- **httppilot-desktop:** Iced UI, request tabs, editable headers/query parameters, environment switcher, Basic/Bearer auth in session memory, async tasks.
-- **httppilot-cli:** small executable using the same core for testing and automation.
+- **httppilot-core:** Reqwest/Tokio HTTP engine, pooled connections, timeout, template interpolation, bounded response preview.
+- **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion.
+- **httppilot-desktop:** Iced UI, request tabs, editable headers/query params, collection renaming, authentication, autosave and cancellation.
+- **httppilot-cli:** HTTP requests and Postman Collection v2.1 import/export commands.
 
 ## Request flow
 
-```text
+\`\`\`text
 Desktop or CLI
-    -> single-pass environment template expansion ({{name}})
+    -> single-pass environment expansion ({{name}})
     -> HttpRequest (method, URL, query, headers, auth, optional body)
-    -> HttpEngine (Reqwest connection pool + timeout)
+    -> HttpEngine (Reqwest pool + timeout)
     -> HTTP response chunks
     -> bounded preview + status + headers + elapsed time
     -> UI / terminal
-```
+\`\`\`
 
-## Persistence
+A response preview is capped at 1 MiB by default. Large responses require a future binary streaming/download implementation.
 
-The current workspace is serialized as JSON in one SQLite row. This provides atomic local snapshots and an easy first migration path. The desktop Save button persists collections, requests, headers, bodies, and opened tabs. It does not yet autosave.
+## Local state and concurrency
 
-SQLite is stored in the OS-specific local application data directory resolved via `directories::ProjectDirs`.
+One JSON snapshot is stored in a SQLite row, with a separate revision row. Saving uses a compare-and-swap transaction: changes from another running instance cause a conflict rather than silent overwrites. The desktop debounces autosaves, saves through the blocking thread pool, and flushes on normal window close. UI changes that occur during an in-flight save remain dirty and are saved again.
 
-**Security:** common secret-bearing headers (Authorization, Cookie, X-API-Key, tokens/secrets) are removed before saving. Environment variables tagged Secret have their values redacted during persistence. Authentication fields are volatile and are never serialized. This does **not** protect secrets accidentally typed in URLs, query parameters, bodies, ordinary environment variables, or other custom headers: those remain plaintext in SQLite. The app uses no OS keychain yet. Avoid inserting secrets into persisted fields. Secret variable values are lost on restart.
+A force quit can still lose unsaved edits. Workspaces are not yet normalized into individual SQLite tables.
+
+## Credential handling
+
+- Basic and Bearer credentials are session-only unless explicitly saved to the OS keychain.
+- Common credential-bearing headers are excluded from persisted workspace snapshots.
+- Environment variables tagged Secret are redacted when writing to SQLite.
+- The Windows credential store and Linux Secret Service are used by the keychain integration. If a keychain call fails, there is no plaintext fallback.
+- URLs, request bodies, ordinary environment variables, arbitrary headers and query parameters are still stored in plaintext and may contain sensitive data.
+
+## Postman interoperability
+
+Postman Collection **v2.1** import/export is a pure storage-layer conversion exposed by the CLI; it never contacts Postman's servers. An import appends a new collection with new IDs, preserving existing requests and tabs. Folders are flattened into request-name prefixes (such as \`Users / Get one\`); no Postman script, authentication definition, form-data body, or nested folder model is imported. Unsupported body modes and methods are rejected rather than silently converted.
+
+Explicit authentication metadata and common secret-bearing headers are ignored during import/export. A raw URL or body may still contain secrets: **review imported/exported JSON carefully**. Postman export creates a new file only; it refuses to overwrite an existing file.
 
 ## Performance principles
 
-1. HTTP engine remains independent of UI and storage.
-2. HTTP runs asynchronously and SQLite saves run in a blocking threadpool.
-3. Response previews have a 1 MiB memory limit, not unlimited buffering.
-4. Reuse Reqwest connection pools via a shared client.
-5. Compare startup time, RAM use, large JSON inspection and request concurrency on Windows/Linux.
-6. Work offline without a required account or telemetry.
+1. HTTP engine and persistence are UI independent.
+2. I/O occurs asynchronously, or off the GUI thread for SQLite and keychain operations.
+3. Limit preview size and avoid accumulating response payloads unboundedly.
+4. Share HTTP connection pools between requests.
+5. Use benchmark measurements before claiming speed or memory improvements.
+6. Do not require cloud accounts, telemetry or a remote database.
 
-## Known limitations
+## Known limitations / roadmap
 
-- Response rendering is a simple text view, not virtualized.
-- Request metadata and content preview are currently not optimized for large collections.
-- Only manual saves are implemented; UI state updates are not persisted until Save.
-- Environment variables are single-pass, support only {{name}} syntax and cannot reference one another recursively.
-- Basic/Bearer auth values are session-only; secure OS keychain persistence is not implemented.
-- No request cancellation or streaming binary download yet.
-- Editing a request while a network call is pending does not cancel the in-flight request.
-- A request body is sent only for non-GET/HEAD methods.
-- The current workspace format has no migration/versioning yet.
-
-## Next milestones
-
-1. SQLite schema migrations and automatic/delayed save with concurrency protection.
-2. Secure keychain for credentials, auto-save with concurrency protection, environment export/import.
-3. Explicit request cancellation and streaming downloads to disk.
-4. Syntax highlighting, virtualized JSON inspection and large-response benchmarks.
-5. Postman/OpenAPI import/export, test scripts and packaging.
+1. Provide native Postman import/export UI and fully hierarchical collection folders.
+2. Add OpenAPI import/export, request scripts, test assertions and execution history.
+3. Add streaming downloads, GraphQL, WebSocket and gRPC.
+4. Introduce virtualization for large request lists and structured JSON viewers.
+5. Build benchmarks, packaging and installers for Windows/Linux.
