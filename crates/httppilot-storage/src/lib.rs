@@ -7,7 +7,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod history;
 pub mod postman;
+pub use history::HistoryEntry;
 pub use postman::{
     ImportedCollection, ImportedRequest, PostmanError, export_postman_json, import_postman_json,
 };
@@ -278,7 +280,15 @@ impl Storage {
                 state TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS workspace_revision (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL);
-            INSERT OR IGNORE INTO workspace_revision VALUES (1, 0);",
+            INSERT OR IGNORE INTO workspace_revision VALUES (1, 0);
+            CREATE TABLE IF NOT EXISTS request_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id INTEGER NOT NULL,
+                method TEXT NOT NULL,
+                status_code INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                occurred_at_ms INTEGER NOT NULL
+            );",
         )?;
         Ok(storage)
     }
