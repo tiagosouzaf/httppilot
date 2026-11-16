@@ -681,12 +681,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
             state.cancel = Some(cancel_tx);
             return Task::perform(
-                async move {
-                    tokio::select! {
-                        result = engine.execute(request) => result.map_err(|error| error.to_string()),
-                        _ = cancel_rx => Err("Request cancelled".to_owned()),
-                    }
-                },
+                async move { execute_cancellable(engine, request, cancel_rx).await },
                 move |result| Message::Completed(id, generation, result),
             );
         }
@@ -785,6 +780,17 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         );
     }
     Task::none()
+}
+
+async fn execute_cancellable(
+    engine: HttpEngine,
+    request: HttpRequest,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<HttpResponse, String> {
+    tokio::select! {
+        result = engine.execute(request) => result.map_err(|error| error.to_string()),
+        _ = cancel => Err("Request cancelled".to_owned()),
+    }
 }
 
 fn view(state: &State) -> Element<'_, Message> {
@@ -977,7 +983,7 @@ fn view(state: &State) -> Element<'_, Message> {
         authentication = match state.auth_mode {
             AuthMode::None => authentication,
             AuthMode::Bearer => authentication.push(
-                text_input("Bearer token (not saved)", &state.bearer_token)
+                text_input("Bearer token", &state.bearer_token)
                     .secure(true)
                     .on_input(Message::BearerChanged),
             ),
@@ -987,7 +993,7 @@ fn view(state: &State) -> Element<'_, Message> {
                         .on_input(Message::BasicUsernameChanged),
                 )
                 .push(
-                    text_input("Password (not saved)", &state.basic_password)
+                    text_input("Password", &state.basic_password)
                         .secure(true)
                         .on_input(Message::BasicPasswordChanged),
                 ),
@@ -1123,6 +1129,35 @@ fn view(state: &State) -> Element<'_, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancellation_stops_an_in_flight_request() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+        let server = std::thread::spawn(move || {
+            let (_socket, _) = listener.accept().unwrap();
+            let _ = accepted_tx.send(());
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(execute_cancellable(
+            HttpEngine::default(),
+            HttpRequest::new("GET", format!("http://{address}")),
+            cancel_rx,
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(5), accepted_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        cancel_tx.send(()).unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.unwrap_err(), "Request cancelled");
+        server.join().unwrap();
+    }
 
     #[test]
     fn cancellation_ignores_late_completion() {
