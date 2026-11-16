@@ -11,6 +11,8 @@ fn main() -> iced::Result {
     iced::application(State::default, update, view)
         .title("HttpPilot")
         .theme(Theme::Dark)
+        .exit_on_close_request(false)
+        .subscription(|_| iced::window::close_requests().map(Message::CloseRequested))
         .run()
 }
 
@@ -60,7 +62,7 @@ impl fmt::Display for Verb {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 enum AuthMode {
     #[default]
     None,
@@ -94,6 +96,14 @@ impl fmt::Display for EnvironmentChoice {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Credentials {
+    mode: AuthMode,
+    bearer: String,
+    username: String,
+    password: String,
+}
+
 struct State {
     workspace: Workspace,
     name: String,
@@ -118,18 +128,35 @@ struct State {
     save_status: String,
     dirty: bool,
     saving: bool,
+    revision: i64,
+    edit_generation: u64,
+    send_generation: u64,
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    credential_generation: u64,
+    credential_busy: bool,
+    save_blocked: bool,
+    load_failed: bool,
+    closing: Option<iced::window::Id>,
     sending: bool,
     engine: HttpEngine,
 }
 
 impl Default for State {
     fn default() -> Self {
-        let (workspace, save_status, dirty) =
-            match Storage::open_default().and_then(|storage| storage.load()) {
-                Ok(workspace) => (workspace, "Local workspace ready".to_owned(), false),
+        let (workspace, revision, save_status, dirty, save_blocked) =
+            match Storage::open_default().and_then(|storage| storage.load_versioned()) {
+                Ok((workspace, revision)) => (
+                    workspace,
+                    revision,
+                    "Local workspace ready".to_owned(),
+                    false,
+                    false,
+                ),
                 Err(error) => (
                     Workspace::default(),
+                    0,
                     format!("Could not load local workspace: {error}"),
+                    true,
                     true,
                 ),
             };
@@ -158,6 +185,15 @@ impl Default for State {
             save_status,
             dirty,
             saving: false,
+            revision,
+            edit_generation: 0,
+            send_generation: 0,
+            cancel: None,
+            credential_generation: 0,
+            credential_busy: false,
+            save_blocked,
+            load_failed: save_blocked,
+            closing: None,
             sending: false,
             engine: HttpEngine::default(),
         };
@@ -208,6 +244,7 @@ impl State {
         self.new_header_value.clear();
         self.new_query_name.clear();
         self.new_query_value.clear();
+        self.credential_generation = self.credential_generation.wrapping_add(1);
         self.auth_mode = AuthMode::None;
         self.bearer_token.clear();
         self.basic_username.clear();
@@ -218,6 +255,7 @@ impl State {
 
     fn mark_dirty(&mut self) {
         self.dirty = true;
+        self.edit_generation = self.edit_generation.wrapping_add(1);
         self.save_status = "Unsaved changes".to_owned();
     }
 }
@@ -260,12 +298,22 @@ enum Message {
     BasicUsernameChanged(String),
     BasicPasswordChanged(String),
     Send,
-    Completed(u64, Result<HttpResponse, String>),
+    CloseRequested(iced::window::Id),
+    DiscardAndClose,
+    RetrySave,
+    StoreCredentials,
+    LoadCredentials,
+    DeleteCredentials,
+    CredentialResult(u64, u64, Result<Option<String>, String>),
+    Cancel,
+    Completed(u64, u64, Result<HttpResponse, String>),
+    Autosave(u64),
     Save,
-    Saved(Result<(), String>),
+    Saved(u64, Result<i64, String>),
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
+    let generation_before = state.edit_generation;
     match message {
         Message::NewCollection => {
             state.capture_active();
@@ -453,10 +501,113 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 state.mark_dirty();
             }
         }
-        Message::AuthChanged(mode) => state.auth_mode = mode,
-        Message::BearerChanged(value) => state.bearer_token = value,
-        Message::BasicUsernameChanged(value) => state.basic_username = value,
-        Message::BasicPasswordChanged(value) => state.basic_password = value,
+        Message::AuthChanged(mode) => {
+            state.auth_mode = mode;
+            state.credential_generation = state.credential_generation.wrapping_add(1);
+        }
+        Message::BearerChanged(value) => {
+            state.bearer_token = value;
+            state.credential_generation = state.credential_generation.wrapping_add(1);
+        }
+        Message::BasicUsernameChanged(value) => {
+            state.basic_username = value;
+            state.credential_generation = state.credential_generation.wrapping_add(1);
+        }
+        Message::BasicPasswordChanged(value) => {
+            state.basic_password = value;
+            state.credential_generation = state.credential_generation.wrapping_add(1);
+        }
+        Message::CloseRequested(id) => {
+            if !state.dirty && !state.saving {
+                return iced::window::close(id);
+            }
+            state.closing = Some(id);
+            if !state.saving && !state.save_blocked {
+                return update(state, Message::Save);
+            }
+        }
+        Message::DiscardAndClose => {
+            if let Some(id) = state.closing.take() {
+                return iced::window::close(id);
+            }
+        }
+        Message::RetrySave => {
+            if state.load_failed {
+                return Task::none();
+            }
+            state.save_blocked = false;
+            return update(state, Message::Save);
+        }
+        Message::StoreCredentials | Message::LoadCredentials | Message::DeleteCredentials => {
+            if state.credential_busy {
+                return Task::none();
+            }
+            let Some(id) = state.workspace.active_request_id else {
+                return Task::none();
+            };
+            state.credential_busy = true;
+            let generation = state.credential_generation;
+            let action = match message {
+                Message::StoreCredentials => 0,
+                Message::LoadCredentials => 1,
+                _ => 2,
+            };
+            let data = Credentials {
+                mode: state.auth_mode,
+                bearer: state.bearer_token.clone(),
+                username: state.basic_username.clone(),
+                password: state.basic_password.clone(),
+            };
+            return Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+                        let entry = keyring::Entry::new("HttpPilot", &format!("request-{id}"))
+                            .map_err(|e| e.to_string())?;
+                        match action {
+                            0 => {
+                                let value =
+                                    serde_json::to_string(&data).map_err(|e| e.to_string())?;
+                                entry.set_password(&value).map_err(|e| e.to_string())?;
+                                Ok(None)
+                            }
+                            1 => entry.get_password().map(Some).map_err(|e| e.to_string()),
+                            _ => {
+                                entry.delete_credential().map_err(|e| e.to_string())?;
+                                Ok(None)
+                            }
+                        }
+                    })
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r)
+                },
+                move |result| Message::CredentialResult(id, generation, result),
+            );
+        }
+        Message::CredentialResult(id, generation, result) => {
+            state.credential_busy = false;
+            match result {
+                Ok(Some(data))
+                    if state.workspace.active_request_id == Some(id)
+                        && state.credential_generation == generation =>
+                {
+                    match serde_json::from_str::<Credentials>(&data) {
+                        Ok(credentials) => {
+                            state.auth_mode = credentials.mode;
+                            state.bearer_token = credentials.bearer;
+                            state.basic_username = credentials.username;
+                            state.basic_password = credentials.password;
+                            state.save_status = "Credentials loaded from system keychain".into();
+                        }
+                        Err(error) => {
+                            state.save_status = format!("Could not read credentials: {error}")
+                        }
+                    }
+                }
+                Ok(_) => state.save_status = "Keychain operation completed".into(),
+                Err(error) => state.save_status = format!("Keychain operation failed: {error}"),
+            }
+        }
         Message::Send => {
             if state.sending || state.workspace.active_request_id.is_none() {
                 return Task::none();
@@ -525,17 +676,28 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.error = None;
 
             let engine = state.engine.clone();
+            state.send_generation = state.send_generation.wrapping_add(1);
+            let generation = state.send_generation;
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            state.cancel = Some(cancel_tx);
             return Task::perform(
-                async move {
-                    engine
-                        .execute(request)
-                        .await
-                        .map_err(|error| error.to_string())
-                },
-                move |result| Message::Completed(id, result),
+                async move { execute_cancellable(engine, request, cancel_rx).await },
+                move |result| Message::Completed(id, generation, result),
             );
         }
-        Message::Completed(id, result) => {
+        Message::Cancel => {
+            if let Some(cancel) = state.cancel.take() {
+                let _ = cancel.send(());
+            }
+            state.sending = false;
+            state.send_generation = state.send_generation.wrapping_add(1);
+            state.error = Some("Request cancelled".to_owned());
+        }
+        Message::Completed(id, generation, result) => {
+            if generation != state.send_generation {
+                return Task::none();
+            }
+            state.cancel = None;
             state.sending = false;
             // A response must never appear in a different request's tab.
             if state.workspace.active_request_id != Some(id) {
@@ -546,49 +708,89 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Err(error) => state.error = Some(error),
             }
         }
+        Message::Autosave(generation) => {
+            if generation == state.edit_generation
+                && state.dirty
+                && !state.saving
+                && !state.save_blocked
+            {
+                return update(state, Message::Save);
+            }
+        }
         Message::Save => {
-            if state.saving {
+            if state.saving || state.save_blocked {
                 return Task::none();
             }
 
             state.capture_active();
             let workspace = state.workspace.clone();
             state.saving = true;
-            state.dirty = false;
+            let generation = state.edit_generation;
+            let revision = state.revision;
             state.save_status = "Saving locally...".to_owned();
 
             return Task::perform(
                 async move {
                     tokio::task::spawn_blocking(move || {
                         Storage::open_default()
-                            .and_then(|storage| storage.save(&workspace))
+                            .and_then(|storage| storage.save_versioned(&workspace, revision))
                             .map_err(|error| error.to_string())
                     })
                     .await
                     .map_err(|error| error.to_string())
                     .and_then(|result| result)
                 },
-                Message::Saved,
+                move |result| Message::Saved(generation, result),
             );
         }
-        Message::Saved(result) => {
+        Message::Saved(generation, result) => {
             state.saving = false;
             match result {
-                Ok(()) => {
+                Ok(revision) => {
+                    state.revision = revision;
+                    state.dirty = generation != state.edit_generation;
                     state.save_status = if state.dirty {
                         "Saved snapshot; newer changes are unsaved".to_owned()
                     } else {
                         "Saved to local SQLite".to_owned()
                     };
+                    if state.dirty {
+                        return update(state, Message::Save);
+                    }
+                    if let Some(id) = state.closing.take() {
+                        return iced::window::close(id);
+                    }
                 }
                 Err(error) => {
                     state.dirty = true;
+                    state.save_blocked = true;
                     state.save_status = format!("Could not save: {error}");
                 }
             }
         }
     }
+    if state.edit_generation != generation_before && !state.save_blocked {
+        let generation = state.edit_generation;
+        return Task::perform(
+            async move {
+                tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                generation
+            },
+            Message::Autosave,
+        );
+    }
     Task::none()
+}
+
+async fn execute_cancellable(
+    engine: HttpEngine,
+    request: HttpRequest,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<HttpResponse, String> {
+    tokio::select! {
+        result = engine.execute(request) => result.map_err(|error| error.to_string()),
+        _ = cancel => Err("Request cancelled".to_owned()),
+    }
 }
 
 fn view(state: &State) -> Element<'_, Message> {
@@ -721,9 +923,11 @@ fn view(state: &State) -> Element<'_, Message> {
 
     let main_content: Element<'_, Message> = if state.workspace.active_request_id.is_some() {
         let mut send_button = button(if state.sending { "Sending..." } else { "Send" });
-        if !state.sending {
-            send_button = send_button.on_press(Message::Send);
-        }
+        send_button = if state.sending {
+            button("Cancel").on_press(Message::Cancel)
+        } else {
+            send_button.on_press(Message::Send)
+        };
 
         let mut save_button = button(if state.saving { "Saving..." } else { "Save" });
         if !state.saving {
@@ -772,14 +976,14 @@ fn view(state: &State) -> Element<'_, Message> {
         );
 
         let mut authentication = column![
-            text("AUTHENTICATION - SESSION ONLY").size(16),
+            text("AUTHENTICATION").size(16),
             pick_list(AuthMode::ALL, Some(state.auth_mode), Message::AuthChanged),
         ]
         .spacing(8);
         authentication = match state.auth_mode {
             AuthMode::None => authentication,
             AuthMode::Bearer => authentication.push(
-                text_input("Bearer token (not saved)", &state.bearer_token)
+                text_input("Bearer token", &state.bearer_token)
                     .secure(true)
                     .on_input(Message::BearerChanged),
             ),
@@ -789,11 +993,20 @@ fn view(state: &State) -> Element<'_, Message> {
                         .on_input(Message::BasicUsernameChanged),
                 )
                 .push(
-                    text_input("Password (not saved)", &state.basic_password)
+                    text_input("Password", &state.basic_password)
                         .secure(true)
                         .on_input(Message::BasicPasswordChanged),
                 ),
         };
+
+        authentication = authentication.push(
+            row![
+                button("Save credentials to keychain").on_press(Message::StoreCredentials),
+                button("Load credentials").on_press(Message::LoadCredentials),
+                button("Delete credentials").on_press(Message::DeleteCredentials)
+            ]
+            .spacing(6),
+        );
 
         let mut headers =
             column![text("HEADERS").size(16), text("Name / Value").size(12),].spacing(8);
@@ -898,5 +1111,86 @@ fn view(state: &State) -> Element<'_, Message> {
         .into()
     };
 
-    row![sidebar, main_content].height(Length::Fill).into()
+    let mut layout = column![row![sidebar, main_content].height(Length::Fill)];
+    if state.save_blocked {
+        let mut controls = row![text(&state.save_status)].spacing(8);
+        if !state.load_failed {
+            controls = controls.push(button("Retry saving").on_press(Message::RetrySave));
+        }
+        if state.closing.is_some() {
+            controls = controls
+                .push(button("Discard changes and close").on_press(Message::DiscardAndClose));
+        }
+        layout = layout.push(controls);
+    }
+    layout.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancellation_stops_an_in_flight_request() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+        let server = std::thread::spawn(move || {
+            let (_socket, _) = listener.accept().unwrap();
+            let _ = accepted_tx.send(());
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(execute_cancellable(
+            HttpEngine::default(),
+            HttpRequest::new("GET", format!("http://{address}")),
+            cancel_rx,
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(5), accepted_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        cancel_tx.send(()).unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.unwrap_err(), "Request cancelled");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn cancellation_ignores_late_completion() {
+        let mut state = State {
+            sending: true,
+            send_generation: 10,
+            ..State::default()
+        };
+        let (sender, mut receiver) = tokio::sync::oneshot::channel();
+        state.cancel = Some(sender);
+        let _ = update(&mut state, Message::Cancel);
+        assert!(!state.sending);
+        assert!(receiver.try_recv().is_ok());
+        state.sending = true;
+        let _ = update(
+            &mut state,
+            Message::Completed(2, 10, Err("old result".into())),
+        );
+        assert!(state.sending);
+        assert_ne!(state.error.as_deref(), Some("old result"));
+    }
+
+    #[test]
+    fn edits_during_save_remain_dirty() {
+        let mut state = State {
+            saving: true,
+            save_blocked: false,
+            edit_generation: 2,
+            ..State::default()
+        };
+        let _ = update(&mut state, Message::Saved(1, Ok(3)));
+        assert!(state.dirty);
+        assert!(state.saving);
+        assert_eq!(state.revision, 3);
+    }
 }

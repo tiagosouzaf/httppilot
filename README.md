@@ -34,19 +34,21 @@ On Linux, GUI packages for Wayland/X11 may be required depending on the distribu
 - GET, POST, PUT, PATCH, DELETE and HEAD requests
 - Native desktop with sidebar collections and multiple request tabs
 - Request-name editor, editable headers, query parameters and request body
-- Send button, HTTP response status, elapsed time and text preview
+- Send and Cancel buttons, HTTP response status, elapsed time and text preview
 - Dedicated query parameter editor (Reqwest percent-encodes values, preserving existing URL query parameters)
 - Switchable named environments and {{variable}} interpolation in URLs, query parameters, headers, body and authentication fields
-- Bearer token and Basic authentication with **session-only** credentials
-- Manual **Save** of workspace/collections/tabs/environments to local SQLite
+- Bearer token and Basic authentication, optionally saved explicitly to the OS keychain
+- Debounced automatic saving to SQLite, with revision checks to prevent conflicting instances from overwriting each other
 - Reusable Reqwest HTTP connection pool and bounded 1 MiB response preview
 - CI for Ubuntu and Windows
 
 ## Workspace security
 
-Local data is stored in **unencrypted SQLite** in the OS-specific application data directory. HttpPilot removes common secret-bearing headers from saved snapshots. Environment variables marked **Secret** have their values excluded from SQLite; you must enter them again after restarting the app. Basic credentials and Bearer tokens entered in the **Authentication** section are kept in memory only and reset when switching requests.
+Local data is stored in **unencrypted SQLite** in the OS-specific application data directory. HttpPilot removes common secret-bearing headers from saved snapshots. Environment variables marked **Secret** have their values excluded from SQLite; you must enter them again after restarting the app. Authentication credentials are session-only unless explicitly saved using the keychain button. Use Load credentials to restore them for a request, and Delete credentials to remove them. On Linux, a running Secret Service keyring is required; on Windows, the Windows credential store is used. Keychain failures are shown in the application and never trigger a plaintext fallback.
 
-**Important:** request bodies, URLs, query parameters, ordinary environment variables and custom headers are stored in plaintext. They may contain sensitive data. Do **not** place credentials there. Use `{{token}}` references to environment variables marked Secret in requests. Secrets are not yet persisted in a system keyring; protected storage is a planned milestone.
+**Important:** request bodies, URLs, query parameters, ordinary environment variables and custom headers are stored in plaintext. They may contain sensitive data. Do **not** place credentials there. Use `{{token}}` references to environment variables marked Secret in requests. Secret environment variables remain session-only.
+
+Autosave waits briefly after edits and flushes on normal window close. If another instance has changed the workspace, saving stops instead of overwriting its changes; keep the window open and preserve your edits before restarting. A force quit or system failure may still lose changes that have not reached SQLite.
 
 ## Source layout
 
@@ -70,8 +72,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## Roadmap
 
-- OS keychain support for secure persistent credentials
-- Automatic save with concurrency protection, collection renaming and export
+- Collection renaming and export
 - Postman/OpenAPI import/export and test scripts
 - GraphQL, WebSocket, gRPC and binary file streaming
 - Benchmarking, releases and Windows/Linux installers

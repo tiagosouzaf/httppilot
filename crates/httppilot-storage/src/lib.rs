@@ -17,6 +17,8 @@ pub enum StorageError {
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error("workspace changed in another instance; reload before saving")]
+    Conflict,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,14 +230,31 @@ impl Storage {
             "CREATE TABLE IF NOT EXISTS workspace (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 state TEXT NOT NULL
-            );",
+            );
+            CREATE TABLE IF NOT EXISTS workspace_revision (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL);
+            INSERT OR IGNORE INTO workspace_revision VALUES (1, 0);",
         )?;
         Ok(storage)
     }
 
+    pub fn load_versioned(&self) -> Result<(Workspace, i64), StorageError> {
+        let tx = self.db.unchecked_transaction()?;
+        let revision = tx.query_row(
+            "SELECT revision FROM workspace_revision WHERE id = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        let workspace = Self::load_from(&tx)?;
+        tx.commit()?;
+        Ok((workspace, revision))
+    }
+
     pub fn load(&self) -> Result<Workspace, StorageError> {
-        let serialized: Option<String> = self
-            .db
+        Self::load_from(&self.db)
+    }
+
+    fn load_from(db: &Connection) -> Result<Workspace, StorageError> {
+        let serialized: Option<String> = db
             .query_row("SELECT state FROM workspace WHERE id = 1", [], |row| {
                 row.get(0)
             })
@@ -248,6 +267,15 @@ impl Storage {
     }
 
     pub fn save(&self, workspace: &Workspace) -> Result<(), StorageError> {
+        let (_, revision) = self.load_versioned()?;
+        self.save_versioned(workspace, revision).map(|_| ())
+    }
+
+    pub fn save_versioned(
+        &self,
+        workspace: &Workspace,
+        revision: i64,
+    ) -> Result<i64, StorageError> {
         let mut sanitized = workspace.clone();
 
         // Credentials should be stored in the OS keychain, not SQLite.
@@ -269,12 +297,21 @@ impl Storage {
         }
 
         let state = serde_json::to_string(&sanitized)?;
-        self.db.execute(
+        let tx = self.db.unchecked_transaction()?;
+        let changed = tx.execute(
+            "UPDATE workspace_revision SET revision = revision + 1 WHERE id = 1 AND revision = ?1",
+            params![revision],
+        )?;
+        if changed != 1 {
+            return Err(StorageError::Conflict);
+        }
+        tx.execute(
             "INSERT INTO workspace (id, state) VALUES (1, ?1)
              ON CONFLICT(id) DO UPDATE SET state = excluded.state",
             params![state],
         )?;
-        Ok(())
+        tx.commit()?;
+        Ok(revision + 1)
     }
 }
 
@@ -298,7 +335,9 @@ mod tests {
             "CREATE TABLE workspace (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 state TEXT NOT NULL
-            );",
+            );
+            CREATE TABLE workspace_revision (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL);
+            INSERT INTO workspace_revision VALUES (1, 0);",
         )
         .unwrap();
         Storage { db }
@@ -370,6 +409,21 @@ mod tests {
             "https://example.com"
         );
         assert!(loaded.environments[0].variables[1].value.is_empty());
+    }
+
+    #[test]
+    fn stale_writer_cannot_overwrite_newer_workspace() {
+        let store = in_memory();
+        let (mut first, revision) = store.load_versioned().unwrap();
+        let (mut second, stale_revision) = store.load_versioned().unwrap();
+        first.request_mut(2).unwrap().name = "first".into();
+        second.request_mut(2).unwrap().name = "second".into();
+        store.save_versioned(&first, revision).unwrap();
+        assert!(matches!(
+            store.save_versioned(&second, stale_revision),
+            Err(StorageError::Conflict)
+        ));
+        assert_eq!(store.load().unwrap().request(2).unwrap().name, "first");
     }
 
     #[test]
