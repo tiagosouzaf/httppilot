@@ -10,3 +10,7 @@ httppilot-core = { path = "../httppilot-core" }
 httppilot-storage = { path = "../httppilot-storage" }
 iced.workspace = true
 tokio.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+keyring = { version = "3.6.3", features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
