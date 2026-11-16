@@ -9,9 +9,14 @@ use std::{io, process::Stdio, time::Duration};
 
 use serde_json::Value;
 use thiserror::Error;
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 
-const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+const MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ANSWER_BYTES: usize = 512 * 1024;
+const MAX_MCP_SERVERS: usize = 64;
 const MAX_PROMPT_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Error)]
@@ -42,6 +47,14 @@ pub enum LocalCliError {
     OutputTooLarge,
     #[error("Local MCP configuration could not be read")]
     McpUnavailable,
+    #[error("Selected MCP server is not configured locally: {0}")]
+    McpNotFound(String),
+    #[error("MCP server has a name that cannot be safely overridden: {0}")]
+    InvalidMcpName(String),
+    #[error("Too many local MCP servers are configured (limit: 64)")]
+    TooManyMcpServers,
+    #[error("Codex produced an unexpected response format")]
+    InvalidCodexOutput,
     #[error("Failed to run official Claude Code in a terminal. Open a terminal and run: claude")]
     ClaudeCodeUnavailable,
     #[error("Local process error: {0}")]
@@ -61,10 +74,10 @@ fn classify_login_status(success: bool, raw: &str) -> CodexAuth {
         return CodexAuth::NotSignedIn;
     }
     let lower = raw.to_ascii_lowercase();
-    if lower.contains("chatgpt") {
-        CodexAuth::ChatGptSubscription
-    } else if lower.contains("api key") || lower.contains("api_key") {
+    if lower.contains("api key") || lower.contains("api_key") {
         CodexAuth::ApiKey
+    } else if lower.contains("logged in using chatgpt") || lower.contains("logged in with chatgpt") {
+        CodexAuth::ChatGptSubscription
     } else {
         CodexAuth::Unknown
     }
@@ -87,15 +100,18 @@ pub async fn codex_auth_status() -> Result<CodexAuth, LocalCliError> {
 
 /// Execute the official Codex CLI through a saved ChatGPT login only.
 ///
-/// The prompt goes through stdin (never through process arguments), and only
-/// the generated final answer is returned. The CLI inherits the user's own
-/// MCP configuration ONLY after explicit opt-in via allow_mcp.
+/// Prompts go through stdin (never as arguments), and only the final agent
+/// message from structured JSON events is shown. No raw MCP/tool events,
+/// command output or private configuration is displayed.
 ///
-/// Note: configured MCP tools can access remote systems independently of the
-/// read-only filesystem sandbox. Users must trust/approve those servers.
+/// Selected MCP servers are explicit opt-in. We query the installed local
+/// Codex MCP servers on each call and disable every unselected configured server
+/// via invocation-scoped config overrides. No local config files are modified.
+///
+/// NOTE: MCPs may have remote side effects even in read-only FS sandboxes.
 pub async fn ask_codex_subscription(
     prompt: &str,
-    allow_mcp: bool,
+    selected_mcp: &[String],
 ) -> Result<String, LocalCliError> {
     if prompt.trim().is_empty() {
         return Err(LocalCliError::EmptyPrompt);
@@ -110,17 +126,30 @@ pub async fn ask_codex_subscription(
         CodexAuth::Unknown => return Err(LocalCliError::UnknownAuthentication),
     }
 
+    let overrides = if selected_mcp.is_empty() {
+        Vec::new()
+    } else {
+        let available = list_codex_mcp_names().await?;
+        build_mcp_overrides(&available, selected_mcp)?
+    };
+
     let mut command = Command::new("codex");
     command.args([
         "exec",
+        "--json",
         "--ephemeral",
         "--sandbox",
         "read-only",
         "--skip-git-repo-check",
     ]);
-    if !allow_mcp {
-        // Codex's own switch prevents loading user MCP configuration.
+    if selected_mcp.is_empty() {
+        // Disables the user's Codex config, including registered MCP servers.
+        // Login remains available through CODEX_HOME.
         command.arg("--ignore-user-config");
+    } else {
+        for value in overrides {
+            command.args(["-c", &value]);
+        }
     }
     command.arg("-");
     command
@@ -132,25 +161,86 @@ pub async fn ask_codex_subscription(
         .stderr(Stdio::null())
         .kill_on_drop(true);
 
-    let mut child = command.spawn().map_err(map_codex_spawn)?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes()).await?;
-        stdin.flush().await?;
-        drop(stdin);
-    }
+    let child = command.spawn().map_err(map_codex_spawn)?;
+    let result = tokio::time::timeout(Duration::from_secs(120), async move {
+        let mut child = child;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(prompt.as_bytes()).await?;
+            stdin.flush().await?;
+            drop(stdin);
+        }
 
-    let output =
-        match tokio::time::timeout(Duration::from_secs(120), child.wait_with_output()).await {
-            Ok(result) => result?,
-            Err(_) => return Err(LocalCliError::CodexTimedOut),
-        };
-    if !output.status.success() {
-        return Err(LocalCliError::CodexFailed);
+        let output = child.stdout.take().ok_or(LocalCliError::InvalidCodexOutput)?;
+        let mut reader = output.take((MAX_OUTPUT_BYTES as u64) + 1);
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        if bytes.len() > MAX_OUTPUT_BYTES {
+            // The child is killed on drop rather than buffering unbounded
+            // tool results in memory.
+            return Err(LocalCliError::OutputTooLarge);
+        }
+
+        let status = child.wait().await?;
+        if !status.success() {
+            return Err(LocalCliError::CodexFailed);
+        }
+        parse_codex_final_answer(&bytes)
+    })
+    .await
+    .map_err(|_| LocalCliError::CodexTimedOut)??;
+    Ok(result)
+}
+
+/// Construct safe, invocation-only MCP enable overrides, never editing the
+/// user's Codex configuration. Unknown and malformed server names fail closed.
+fn build_mcp_overrides(
+    available: &[String],
+    selected: &[String],
+) -> Result<Vec<String>, LocalCliError> {
+    if available.len() > MAX_MCP_SERVERS {
+        return Err(LocalCliError::TooManyMcpServers);
     }
-    if output.stdout.len() > MAX_OUTPUT_BYTES {
-        return Err(LocalCliError::OutputTooLarge);
+    for server in selected {
+        if !available.contains(server) {
+            return Err(LocalCliError::McpNotFound(server.clone()));
+        }
     }
-    let content = String::from_utf8_lossy(&output.stdout).into_owned();
+    available
+        .iter()
+        .map(|name| {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+            {
+                return Err(LocalCliError::InvalidMcpName(name.clone()));
+            }
+            // TOML quoted path component prevents a dotted server name from
+            // being interpreted as multiple config path components.
+            let enabled = selected.contains(name);
+            Ok(format!("mcp_servers.\"{name}\".enabled={enabled}"))
+        })
+        .collect()
+}
+
+/// Extract only the last completed assistant message from the CLI's NDJSON
+/// stream; raw logs and tool results may contain secrets and are never shown.
+fn parse_codex_final_answer(events: &[u8]) -> Result<String, LocalCliError> {
+    let mut answer = None;
+    for line in events.split(|b| *b == b'\n').filter(|line| !line.is_empty()) {
+        let event: Value =
+            serde_json::from_slice(line).map_err(|_| LocalCliError::InvalidCodexOutput)?;
+        if event.get("type").and_then(Value::as_str) == Some("item.completed")
+            && event.pointer("/item/type").and_then(Value::as_str) == Some("agent_message")
+            && let Some(text) = event.pointer("/item/text").and_then(Value::as_str)
+        {
+            if text.len() > MAX_ANSWER_BYTES {
+                return Err(LocalCliError::OutputTooLarge);
+            }
+            answer = Some(text.to_owned());
+        }
+    }
+    let content = answer.ok_or(LocalCliError::EmptyAnswer)?;
     if content.trim().is_empty() {
         Err(LocalCliError::EmptyAnswer)
     } else {
