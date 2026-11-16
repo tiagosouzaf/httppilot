@@ -25,16 +25,18 @@ enum Verb {
     Patch,
     Delete,
     Head,
+    Options,
 }
 
 impl Verb {
-    const ALL: [Verb; 6] = [
+    const ALL: [Verb; 7] = [
         Verb::Get,
         Verb::Post,
         Verb::Put,
         Verb::Patch,
         Verb::Delete,
         Verb::Head,
+        Verb::Options,
     ];
 
     fn parse(method: &str) -> Self {
@@ -44,6 +46,7 @@ impl Verb {
             "PATCH" => Self::Patch,
             "DELETE" => Self::Delete,
             "HEAD" => Self::Head,
+            "OPTIONS" => Self::Options,
             _ => Self::Get,
         }
     }
@@ -58,6 +61,7 @@ impl fmt::Display for Verb {
             Self::Patch => "PATCH",
             Self::Delete => "DELETE",
             Self::Head => "HEAD",
+            Self::Options => "OPTIONS",
         })
     }
 }
@@ -1138,6 +1142,12 @@ fn view(state: &State) -> Element<'_, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn options_method_round_trips_without_becoming_get() {
+        assert!(matches!(Verb::parse("options"), Verb::Options));
+        assert_eq!(Verb::Options.to_string(), "OPTIONS");
+    }
 
     #[tokio::test]
     async fn cancellation_stops_an_in_flight_request() {
