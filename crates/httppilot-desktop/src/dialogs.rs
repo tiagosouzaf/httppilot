@@ -52,7 +52,7 @@ pub fn select_json_file(save: bool) -> Result<Option<String>, String> {
         } else {
             ["--getopenfilename", ".", "JSON files (*.json)"]
         });
-        return command_result(&mut kdialog);
+        command_result(&mut kdialog)
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
