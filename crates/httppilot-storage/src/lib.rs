@@ -26,12 +26,35 @@ pub struct Header {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueryParameter {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnvironmentVariable {
+    pub name: String,
+    pub value: String,
+    #[serde(default)]
+    pub secret: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Environment {
+    pub id: u64,
+    pub name: String,
+    pub variables: Vec<EnvironmentVariable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedRequest {
     pub id: u64,
     pub name: String,
     pub method: String,
     pub url: String,
     pub headers: Vec<Header>,
+    #[serde(default)]
+    pub query: Vec<QueryParameter>,
     pub body: String,
 }
 
@@ -45,6 +68,10 @@ pub struct Collection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     pub collections: Vec<Collection>,
+    #[serde(default)]
+    pub environments: Vec<Environment>,
+    #[serde(default)]
+    pub active_environment_id: Option<u64>,
     pub tabs: Vec<u64>,
     pub active_request_id: Option<u64>,
     pub next_id: u64,
@@ -62,12 +89,19 @@ impl Default for Workspace {
                     method: "GET".to_owned(),
                     url: "https://httpbin.org/get".to_owned(),
                     headers: Vec::new(),
+                    query: Vec::new(),
                     body: String::new(),
                 }],
             }],
+            environments: vec![Environment {
+                id: 3,
+                name: "Local".to_owned(),
+                variables: Vec::new(),
+            }],
+            active_environment_id: Some(3),
             tabs: vec![2],
             active_request_id: Some(2),
-            next_id: 3,
+            next_id: 4,
         }
     }
 }
@@ -105,9 +139,39 @@ impl Workspace {
             method: "GET".to_owned(),
             url: String::new(),
             headers: Vec::new(),
+            query: Vec::new(),
             body: String::new(),
         });
         Some(id)
+    }
+
+    pub fn new_environment(&mut self) -> u64 {
+        let id = self.allocate_id();
+        self.environments.push(Environment {
+            id,
+            name: format!("Environment {}", self.environments.len() + 1),
+            variables: Vec::new(),
+        });
+        self.active_environment_id = Some(id);
+        id
+    }
+
+    pub fn environment_mut(&mut self, id: u64) -> Option<&mut Environment> {
+        self.environments.iter_mut().find(|env| env.id == id)
+    }
+
+    pub fn selected_variables(&self) -> Vec<(String, String)> {
+        self.environments
+            .iter()
+            .find(|env| Some(env.id) == self.active_environment_id)
+            .map(|env| {
+                env.variables
+                    .iter()
+                    .filter(|var| !var.name.trim().is_empty())
+                    .map(|var| (var.name.clone(), var.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn request(&self, id: u64) -> Option<&SavedRequest> {
@@ -196,6 +260,14 @@ impl Storage {
             }
         }
 
+        for environment in &mut sanitized.environments {
+            for variable in &mut environment.variables {
+                if variable.secret {
+                    variable.value.clear();
+                }
+            }
+        }
+
         let state = serde_json::to_string(&sanitized)?;
         self.db.execute(
             "INSERT INTO workspace (id, state) VALUES (1, ?1)
@@ -273,6 +345,28 @@ mod tests {
                 value: "application/json".into(),
             }]
         );
+    }
+
+    #[test]
+    fn secret_environment_values_are_never_saved() {
+        let store = in_memory();
+        let mut workspace = Workspace::default();
+        workspace.environments[0].variables = vec![
+            EnvironmentVariable { name: "baseUrl".into(), value: "https://example.com".into(), secret: false },
+            EnvironmentVariable { name: "token".into(), value: "dont-save-this".into(), secret: true },
+        ];
+        store.save(&workspace).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.environments[0].variables[0].value, "https://example.com");
+        assert!(loaded.environments[0].variables[1].value.is_empty());
+    }
+
+    #[test]
+    fn old_workspace_json_is_backward_compatible() {
+        let old = r#"{ "collections": [], "tabs": [], "active_request_id": null, "next_id": 3 }"#;
+        let workspace: Workspace = serde_json::from_str(old).unwrap();
+        assert!(workspace.environments.is_empty());
+        assert_eq!(workspace.active_environment_id, None);
     }
 
     #[test]
