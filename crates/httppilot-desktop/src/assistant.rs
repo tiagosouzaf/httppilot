@@ -13,7 +13,7 @@ use iced::{
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-enum Backend {
+pub enum Backend {
     #[default]
     CodexSubscription,
     OpenAiApi,
@@ -50,7 +50,7 @@ impl fmt::Display for Backend {
     }
 }
 
-enum KeyringReply {
+pub enum KeyringReply {
     Stored,
     Loaded(String),
     Deleted,
