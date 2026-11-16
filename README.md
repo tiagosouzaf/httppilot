@@ -66,11 +66,11 @@ API keys are session-only unless you **explicitly** press **Save in keychain**. 
 
 ### Local MCP tools
 
-The **List local MCPs** action reads **only server names** from `codex mcp list --json` on your machine; it does not display or copy secret configuration. MCP use is **off by default**, and activating it allows the official Codex CLI to load your existing configured MCP servers in a task. **MCPs can modify remote systems**, even when Codex is operating with a read-only filesystem sandbox. Enable MCP only for servers and actions you trust.
+The **List local MCPs** action reads **only server names** from `codex mcp list --json` on your machine; it does not display or copy secret configuration. MCP use is **off by default**. After scanning, explicitly select each MCP server you trust and turn MCP on. Each Codex invocation re-reads local MCP server names and sets temporary enabled/disabled overrides for the selected servers without editing your config. Unknown or unusual server names cause a safe error instead of being enabled automatically. **MCP tools can modify remote systems**, even when Codex is operating with a read-only filesystem sandbox. Allow only trusted MCPs; remote tool approvals are handled by Codex and the server.
 
 The assistant sends **only the prompt explicitly entered in its own editor**. It never automatically sends request URLs, API headers, HTTP payloads, responses, environment variables or workspace history.
 
-The Codex CLI runs with `--sandbox read-only`, `--ephemeral`, and without inheriting `OPENAI_API_KEY` or `CODEX_API_KEY` from HttpPilot's environment. When MCP mode is disabled, it uses `--ignore-user-config`. No browser session scraping, OAuth token extraction or unofficial subscription proxy is involved.
+The Codex CLI runs with `--sandbox read-only`, `--ephemeral`, and without inheriting `OPENAI_API_KEY` or `CODEX_API_KEY` from HttpPilot's environment. When no MCP servers are selected or MCP is off, it uses `--ignore-user-config`. It requests JSONL events with `--json`, extracts **only the final assistant message**, and limits raw event buffering to 4 MiB; tool outputs are never displayed verbatim. No browser session scraping, OAuth token extraction or unofficial subscription proxy is involved.
 
 **Official documentation:** [Codex CLI](https://learn.chatgpt.com/docs/cli/reference), [Claude Code subscriptions](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-max-or-ultra-plan), [Claude Code authentication rules](https://code.claude.com/docs/en/legal-and-compliance).
 
