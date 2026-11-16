@@ -1161,9 +1161,11 @@ mod tests {
 
     #[test]
     fn cancellation_ignores_late_completion() {
-        let mut state = State::default();
-        state.sending = true;
-        state.send_generation = 10;
+        let mut state = State {
+            sending: true,
+            send_generation: 10,
+            ..State::default()
+        };
         let (sender, mut receiver) = tokio::sync::oneshot::channel();
         state.cancel = Some(sender);
         let _ = update(&mut state, Message::Cancel);
@@ -1180,10 +1182,12 @@ mod tests {
 
     #[test]
     fn edits_during_save_remain_dirty() {
-        let mut state = State::default();
-        state.saving = true;
-        state.save_blocked = false;
-        state.edit_generation = 2;
+        let mut state = State {
+            saving: true,
+            save_blocked: false,
+            edit_generation: 2,
+            ..State::default()
+        };
         let _ = update(&mut state, Message::Saved(1, Ok(3)));
         assert!(state.dirty);
         assert!(state.saving);
