@@ -1,0 +1,161 @@
+name: Native Installers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 Setup.exe
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Compile release binaries
+        run: cargo build --locked --release -p httppilot-desktop -p httppilot-cli
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "Could not install Inno Setup" }
+          }
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler missing" }
+      - name: Create Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          & $compiler "/Odist" "packaging\windows\HttpPilot.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
+          if (-not (Get-ChildItem -Path dist -Filter "*Setup.exe")) {
+            throw "No Windows installer was produced"
+          }
+      - name: Smoke-test silent installation and uninstallation
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter '*Setup.exe' | Select-Object -First 1
+          $dest = Join-Path $env:RUNNER_TEMP 'HttpPilotSmokeTest'
+          $args = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$dest")
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList $args -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer returned exit code $($process.ExitCode)" }
+          if (-not (Test-Path (Join-Path $dest 'httppilot-desktop.exe'))) {
+            throw "Windows installer did not install the desktop executable"
+          }
+          if (-not (Test-Path (Join-Path $dest 'httppilot-cli.exe'))) {
+            throw "Windows installer did not install the CLI executable"
+          }
+          $uninstaller = Join-Path $dest 'unins000.exe'
+          if (-not (Test-Path $uninstaller)) { throw "Missing Windows uninstaller" }
+          $removed = Start-Process -FilePath $uninstaller -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($removed.ExitCode -ne 0) { throw "Uninstaller failed with $($removed.ExitCode)" }
+          $desktop = Join-Path $dest 'httppilot-desktop.exe'
+          for ($i = 0; $i -lt 10 -and (Test-Path $desktop); $i++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path $desktop) { throw "Windows uninstaller left the desktop executable" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: httppilot-windows-x64-installer
+          path: dist/*Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  arch:
+    name: Arch Linux / Omarchy package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native x86_64 Arch package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -v "$PWD/dist:/out" \
+            archlinux:latest \
+            bash -euo pipefail -c '
+              pacman -Syu --noconfirm --needed \
+                base-devel rust cargo pkgconf \
+                wayland libxkbcommon libx11 libglvnd sqlite dbus zstd
+              useradd --create-home --shell /bin/bash builduser
+              mkdir -p /build
+              cp -a /workspace/. /build/
+              cp /build/packaging/arch/PKGBUILD /build/PKGBUILD
+              chown -R builduser:builduser /build
+              su builduser -s /bin/bash -c \
+                "cd /build && CARGO_BUILD_JOBS=2 makepkg --noconfirm --clean --force"
+              cp /build/httppilot-*.pkg.tar.zst /out/
+              pacman -Qip /out/*.pkg.tar.zst
+              bsdtar -tf /out/*.pkg.tar.zst | grep -Fx "usr/bin/httppilot"
+              bsdtar -tf /out/*.pkg.tar.zst | grep -Fx "usr/bin/httppilot-cli"
+              bsdtar -tf /out/*.pkg.tar.zst | grep -Fx "usr/share/applications/httppilot.desktop"
+              # Exercise real Arch package installation and removal.
+              pacman -U --noconfirm /out/*.pkg.tar.zst
+              test -x /usr/bin/httppilot
+              test -x /usr/bin/httppilot-cli
+              pacman -R --noconfirm httppilot
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: httppilot-arch-x64-installer
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish preview installers
+    needs: [windows, arch]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: httppilot-*-installer
+          path: dist
+          merge-multiple: true
+      - name: Verify files for release
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh dist/
+          test "$(find dist -maxdepth 1 -name '*Setup.exe' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.pkg.tar.zst' | wc -l)" -eq 1
+          cd dist
+          sha256sum -- * > SHA256SUMS.txt
+      - name: Create public preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0-preview.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: HttpPilot 0.1.0 preview ${{ github.run_number }}
+          prerelease: true
+          body: |
+            Native HttpPilot developer preview for Windows x64 and Arch Linux x86_64 (including Omarchy).
+
+            Windows: run the Setup.exe installer (unsigned; Windows may display a security warning).
+            Omarchy/Arch: install the .pkg.tar.zst using `sudo pacman -U ./httppilot-*.pkg.tar.zst`, then launch `httppilot`.
+            This is an early preview. Review the security notes in README before using credentials.
+          files: |
+            dist/*Setup.exe
+            dist/*.pkg.tar.zst
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true

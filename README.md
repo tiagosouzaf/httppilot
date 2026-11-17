@@ -11,6 +11,28 @@ High-performance native API client built in Rust for **Windows** and **Linux**. 
 - SQLite / Rusqlite (local-first workspace)
 - Shared Rust HTTP engine and optional CLI
 
+## Installers (Windows / Omarchy)
+
+Preview installers are built automatically by [Native Installers GitHub Actions](https://github.com/tiagosouzaf/httppilot/actions/workflows/installers.yml) after each `main` update and published as [prereleases](https://github.com/tiagosouzaf/httppilot/releases). These are **unsigned developer previews**, not a security-audited stable release.
+
+**Omarchy / Arch Linux, x86_64** (recommended for Arch-based desktop systems):
+
+1. Open [GitHub Releases](https://github.com/tiagosouzaf/httppilot/releases) and download the newest `httppilot-0.1.0-1-x86_64.pkg.tar.zst`.
+2. Open a terminal in the folder containing the downloaded file.
+3. Install using the system package manager:
+
+   ```bash
+   sudo pacman -U ./httppilot-0.1.0-1-x86_64.pkg.tar.zst
+   ```
+
+4. Launch **HttpPilot** from the applications menu or run `httppilot`. The package also installs the `httppilot-cli` command. It relies on the system SQLite and D-Bus libraries. To remove it, run `sudo pacman -R httppilot`.
+
+**Windows x64:** Download `HttpPilot-0.1.0-Windows-x64-Setup.exe` from [Releases](https://github.com/tiagosouzaf/httppilot/releases), run it, then launch **HttpPilot** using the Start Menu shortcut. The installer is per-user, requires no administrator privileges, installs the desktop and CLI binaries, and supports uninstallation through Windows Apps settings.
+
+**Integrity:** Each prerelease includes a `SHA256SUMS.txt` file to verify downloaded installers. Since binaries are **not code-signed**, Windows SmartScreen and other security software may warn; inspect the GitHub source and release before installing. Never disable security tools globally to run a preview.
+
+For maintainers, the installer definitions are in `packaging/arch/PKGBUILD` and `packaging/windows/HttpPilot.iss`. GitHub Actions compiles the Arch package *inside an Arch Linux container*, compiles the Windows binaries with the stable Rust toolchain, builds an Inno Setup installer, and tests a silent installation in the Windows CI runner. Building packages does **not** validate interactive GUI operation or users' local AI/MCP sign-ins. Installer sources are intentionally contained in the repository for review.
+
 ## Run locally
 
 Requires the stable Rust toolchain (Rust 1.88+).
@@ -122,6 +144,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Native portal-based file picker for all Linux desktops, hierarchical Postman folders, YAML OpenAPI support and OpenAPI export
 - Test scripts and execution history
 - GraphQL, WebSocket, gRPC and binary file streaming
-- Benchmarking, releases and Windows/Linux installers
+- Benchmarking and signed, stable Windows/Linux installers
 
 A public GitHub repository is not automatically open-source licensed. Licensing has not yet been chosen.

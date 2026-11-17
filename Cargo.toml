@@ -15,7 +15,8 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 iced = { version = "0.14", features = ["tokio"] }
-reqwest = "0.13"
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "charset", "http2", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "process", "io-util"] }
 serde = { version = "1", features = ["derive"] }

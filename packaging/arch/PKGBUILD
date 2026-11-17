@@ -1,0 +1,43 @@
+# Maintainer: HttpPilot contributors
+# Local developer preview for Arch Linux / Omarchy.
+pkgname=httppilot
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Native Rust HTTP API client with optional AI integrations'
+arch=('x86_64')
+url='https://github.com/tiagosouzaf/httppilot'
+license=('unknown')
+depends=('glibc' 'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd' 'sqlite' 'dbus')
+optdepends=(
+  'zenity: file picker support'
+  'kdialog: KDE file picker support'
+  'libsecret: integration with a Secret Service keyring'
+)
+makedepends=('rust' 'cargo' 'pkgconf')
+# Arch's global LTO/buildflags can produce native GCC LTO objects that
+# Rust's linker cannot resolve inside ring/dbus static archives. Cargo's
+# --release profile still applies full Rust optimizations.
+options=('!debug' '!lto' '!buildflags')
+source=()
+sha256sums=()
+
+build() {
+    cd "$startdir"
+    # Reqwest uses portable rustls/ring instead of AWS-LC on Linux.
+    # Prefer Rust's default linker flags; system SQLite and D-Bus are linked
+    # by their respective pkg-config integrations.
+    LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
+      CARGO_TARGET_DIR="$startdir/target" \
+      cargo build --locked --release \
+        -p httppilot-desktop \
+        -p httppilot-cli
+}
+
+package() {
+    install -Dm755 "$startdir/target/release/httppilot-desktop" \
+      "$pkgdir/usr/bin/httppilot"
+    install -Dm755 "$startdir/target/release/httppilot-cli" \
+      "$pkgdir/usr/bin/httppilot-cli"
+    install -Dm644 "$startdir/packaging/linux/httppilot.desktop" \
+      "$pkgdir/usr/share/applications/httppilot.desktop"
+}

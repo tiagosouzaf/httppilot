@@ -116,6 +116,9 @@ impl Default for HttpEngine {
 
 impl HttpEngine {
     pub fn new(preview_limit: usize) -> Self {
+        // The ring crypto provider is portable across Windows and Arch Linux.
+        // A previously installed process-default provider is also valid.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         Self {
             client: Client::new(),
             preview_limit,
