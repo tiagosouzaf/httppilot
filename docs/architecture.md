@@ -8,7 +8,7 @@ HttpPilot is a native, cross-platform API client for Windows and Linux. The enti
 
 - **httppilot-ai:** opt-in OpenAI Responses and Claude Messages API adapters, official Codex subscription CLI integration, local Codex MCP discovery, official Claude Code launcher.
 - **httppilot-core:** Reqwest/Tokio HTTP engine, pooled connections, timeout, template interpolation, bounded response preview.
-- **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion and bounded request history metadata.
+- **httppilot-storage:** local SQLite workspace, optimistic revision checking, collections, environments, Postman v2.1 conversion, OpenAPI 3.x JSON importer, and bounded request history metadata.
 - **httppilot-desktop:** Iced UI, request tabs, editable headers/query params, collection renaming, authentication, autosave, cancellation, native file dialogs and history sidebar.
 - **httppilot-cli:** HTTP requests and Postman Collection v2.1 import/export commands.
 
@@ -39,6 +39,10 @@ A force quit can still lose unsaved edits. Workspaces are not yet normalized int
 - Environment variables tagged Secret are redacted when writing to SQLite.
 - The Windows credential store and Linux Secret Service are used by the keychain integration. If a keychain call fails, there is no plaintext fallback.
 - URLs, request bodies, ordinary environment variables, arbitrary headers and query parameters are still stored in plaintext and may contain sensitive data.
+
+## OpenAPI import contract
+
+OpenAPI 3.0–3.2 JSON input is parsed locally without fetching remote references or executing code. Path operations are converted into a flat collection of `ImportedRequest` items and reuse the same workspace ID allocation as Postman imports. Operation/server/path precedence follows the specification. Parameter defaults, security credentials and body examples are not imported; instead query/header/path parameters use environment placeholders. Missing servers become `{{baseUrl}}`, while relative or unknown server schemes cause an explicit error. Local component parameter/requestBody references are supported one level deep; external and recursive references, multipart/binary bodies and TRACE operations cause an import error. No partial collection is persisted on failure.
 
 ## Request history
 

@@ -27,12 +27,13 @@ CLI:
 cargo run -p httppilot-cli -- GET https://httpbin.org/get
 cargo run -p httppilot-cli -- list-collections
 cargo run -p httppilot-cli -- import-postman ./postman-collection-v2.1.json
+cargo run -p httppilot-cli -- import-openapi ./openapi-3.json
 cargo run -p httppilot-cli -- export-postman 1 ./exported-collection.json
 ```
 
-In the desktop sidebar, use **Open file** to choose a Postman JSON, then **Import collection**. For export, use **Save as** to select a *new* JSON filename and click **Export** beside the collection. Windows uses the system file dialog via PowerShell; Linux looks for Zenity or KDialog. If no dialog is available, type the full path manually. File operations run off the UI thread.
+In the desktop sidebar, use **Open file** to choose a JSON file, then **Import Postman v2.1** or **Import OpenAPI 3.x**. For export, use **Save as** to select a *new* JSON filename and click **Export** beside the collection. Windows uses the system file dialog via PowerShell; Linux looks for Zenity or KDialog. If no dialog is available, type the full path manually. File operations run off the UI thread.
 
-Postman imports append a new local collection instead of overwriting existing data. Collection IDs can be listed with `list-collections`. Export refuses to overwrite an existing file, and on Unix newly exported files have user-only permissions. Only raw request bodies and common HTTP methods are currently supported. Nested Postman folders become request-name prefixes.
+Postman and OpenAPI imports append a new local collection instead of overwriting existing data. Collection IDs can be listed with `list-collections`. Export refuses to overwrite an existing file, and on Unix newly exported files have user-only permissions. Only raw request bodies and common HTTP methods are currently supported. Nested Postman folders become request-name prefixes.
 
 On Linux, GUI packages for Wayland/X11 may be required depending on the distribution.
 
@@ -47,7 +48,7 @@ On Linux, GUI packages for Wayland/X11 may be required depending on the distribu
 - Bearer token and Basic authentication, optionally saved explicitly to the OS keychain
 - Debounced automatic saving to SQLite, with revision checks to prevent conflicting instances from overwriting each other
 - Reusable Reqwest HTTP connection pool and bounded 1 MiB response preview
-- Postman Collection v2.1 import/export from the desktop and CLI (no Postman account or cloud required)
+- Postman Collection v2.1 import/export and OpenAPI 3.0–3.2 JSON import from desktop and CLI (offline)
 - Privacy-preserving SQLite history of successful HTTP responses (status, method, elapsed time, request ID only)
 - Optional OpenAI/Claude API AI assistant, ChatGPT subscription via official Codex CLI, local MCP discovery, and separate official Claude Code launch
 - CI for Ubuntu and Windows
@@ -73,6 +74,14 @@ The assistant sends **only the prompt explicitly entered in its own editor**. It
 The Codex CLI runs with `--sandbox read-only`, `--ephemeral`, and without inheriting `OPENAI_API_KEY` or `CODEX_API_KEY` from HttpPilot's environment. When no MCP servers are selected or MCP is off, it uses `--ignore-user-config`. It requests JSONL events with `--json`, extracts **only the final assistant message**, and limits raw event buffering to 4 MiB; tool outputs are never displayed verbatim. No browser session scraping, OAuth token extraction or unofficial subscription proxy is involved.
 
 **Official documentation:** [Codex CLI](https://learn.chatgpt.com/docs/cli/reference), [Claude Code subscriptions](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-max-or-ultra-plan), [Claude Code authentication rules](https://code.claude.com/docs/en/legal-and-compliance).
+
+## OpenAPI JSON import
+
+OpenAPI **3.0, 3.1 and 3.2** JSON documents can be imported entirely offline using the desktop or `import-openapi` CLI command. The importer creates a new collection with HTTP operations, names based on tags and summaries, request URLs based on the specification's declared server, and editable query/header parameters.
+
+Path, query and header parameters are imported as `{{variable}}` placeholders rather than inserting example values or credentials. If the specification does not declare a server, requests use `{{baseUrl}}` and you must configure that environment variable yourself. Server variable defaults and request-body examples are deliberately not copied; JSON/text/XML request bodies start empty. Explicit security schemes and cookie values are ignored.
+
+**Limitations:** this first release accepts JSON only, not YAML. It does not fetch external `$ref` definitions, support multipart/binary request bodies, or import scripts/webhooks. The importer rejects unsupported operations or unresolved references instead of silently omitting them; each import is atomic. Relative server URLs are rejected to prevent guessing a target host. Maximum input file size is 10 MiB and maximum operation count is 3,000. Review every imported URL before sending requests.
 
 ## Request history
 
@@ -110,7 +119,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Roadmap
 
 - Explicit per-MCP-tool approval UI and richer native MCP diagnostics
-- Native portal-based file picker for all Linux desktops, hierarchical Postman folders and OpenAPI import/export
+- Native portal-based file picker for all Linux desktops, hierarchical Postman folders, YAML OpenAPI support and OpenAPI export
 - Test scripts and execution history
 - GraphQL, WebSocket, gRPC and binary file streaming
 - Benchmarking, releases and Windows/Linux installers

@@ -122,15 +122,7 @@ impl AiEngine {
             }
             bytes.extend_from_slice(&chunk);
         }
-        let root: Value = serde_json::from_slice(&bytes)?;
-        if !status.is_success() {
-            return Err(AiError::HttpStatus(
-                status.as_u16(),
-                provider_error(&root, status),
-            ));
-        }
-
-        let content = parse_answer(request.provider, &root)?;
+        let content = decode_provider_response(request.provider, status, &bytes)?;
         Ok(AiAnswer {
             content,
             provider: request.provider,
@@ -153,6 +145,24 @@ impl AiEngine {
             AiProvider::Anthropic => builder.header("anthropic-version", "2026-10-21"),
         }
     }
+}
+
+fn decode_provider_response(
+    provider: AiProvider,
+    status: StatusCode,
+    bytes: &[u8],
+) -> Result<String, AiError> {
+    if !status.is_success() {
+        // Some upstream gateways return an HTML or plaintext error. Retain
+        // the HTTP status instead of reporting a misleading JSON parse error.
+        let parsed = serde_json::from_slice::<Value>(bytes).unwrap_or(Value::Null);
+        return Err(AiError::HttpStatus(
+            status.as_u16(),
+            provider_error(&parsed, status),
+        ));
+    }
+    let root: Value = serde_json::from_slice(bytes)?;
+    parse_answer(provider, &root)
 }
 
 fn validate(request: &AiRequest) -> Result<(), AiError> {
@@ -340,6 +350,24 @@ mod tests {
         request.api_key = "secret".into();
         request.prompt = "x".repeat(MAX_PROMPT_BYTES + 1);
         assert!(matches!(validate(&request), Err(AiError::PromptTooLong)));
+    }
+
+    #[test]
+    fn preserves_http_status_for_non_json_proxy_errors() {
+        let error = decode_provider_response(
+            AiProvider::OpenAi,
+            StatusCode::BAD_GATEWAY,
+            b"<html>upstream unavailable</html>",
+        )
+        .unwrap_err();
+        assert!(matches!(error, AiError::HttpStatus(502, _)));
+    }
+
+    #[test]
+    fn rejects_non_json_success_bodies() {
+        let error = decode_provider_response(AiProvider::Anthropic, StatusCode::OK, b"not JSON")
+            .unwrap_err();
+        assert!(matches!(error, AiError::Json(_)));
     }
 
     #[test]

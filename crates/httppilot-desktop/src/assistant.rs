@@ -144,6 +144,9 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.status = "Modo alterado. Informe somente o texto que deseja enviar.".to_owned();
             state.key_generation = state.key_generation.wrapping_add(1);
             state.send_generation = state.send_generation.wrapping_add(1);
+            // Ignore any in-flight response from the previous provider and
+            // immediately enable Send for the newly selected provider.
+            state.busy = false;
         }
         Message::ModelChanged(model) => state.model = model,
         Message::ApiKeyChanged(key) => {
@@ -502,6 +505,24 @@ mod tests {
         assert_eq!(state.backend, Backend::CodexSubscription);
         assert!(!state.mcp_enabled);
         assert!(state.api_key.is_empty());
+    }
+
+    #[test]
+    fn changing_provider_during_request_does_not_leave_send_disabled() {
+        let mut state = State {
+            busy: true,
+            send_generation: 4,
+            ..State::default()
+        };
+        let _ = update(&mut state, Message::BackendChanged(Backend::ClaudeApi));
+        assert!(!state.busy);
+        assert_eq!(state.send_generation, 5);
+        let _ = update(
+            &mut state,
+            Message::Completed(4, Ok("stale answer".to_owned())),
+        );
+        assert!(state.answer.is_empty());
+        assert!(!state.busy);
     }
 
     #[test]
