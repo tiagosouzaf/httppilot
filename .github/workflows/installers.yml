@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: installers-~{{ github.ref }}
+  group: installers-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
       - name: Install Inno Setup 6
         shell: pwsh
         run: |
-          $compiler = Join-Path ~{env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $compiler)) {
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { throw "Could not install Inno Setup" }
@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          $compiler = Join-Path ~{env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
           & $compiler "/Odist" "packaging\windows\HttpPilot.iss"
           if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
           if (-not (Get-ChildItem -Path dist -Filter "*Setup.exe")) {
@@ -128,9 +128,9 @@ jobs:
       - name: Create public preview release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0-preview.~{{ github.run_number }}
-          target_commitish: ~{{ github.sha }}
-          name: HttpPilot 0.1.0 preview ~{{ github.run_number }}
+          tag_name: v0.1.0-preview.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: HttpPilot 0.1.0 preview ${{ github.run_number }}
           prerelease: true
           body: |
             Native HttpPilot developer preview for Windows x64 and Arch Linux x86_64 (including Omarchy).
