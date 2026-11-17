@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=HttpPilot
+Comment=Cliente HTTP/API nativo para Linux
+GenericName=HTTP API Client
+Exec=httppilot
+Terminal=false
+Icon=applications-development
+Categories=Development;Network;
+StartupNotify=true
