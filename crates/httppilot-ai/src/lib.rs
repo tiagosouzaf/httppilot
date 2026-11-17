@@ -102,6 +102,8 @@ pub struct AiEngine {
 
 impl AiEngine {
     pub fn new() -> Result<Self, AiError> {
+        // Reqwest uses rustls without AWS-LC; install the portable ring provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         Ok(Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(90))

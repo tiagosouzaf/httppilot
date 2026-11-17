@@ -1543,6 +1543,7 @@ name = "httppilot-ai"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rustls",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -1562,6 +1563,7 @@ name = "httppilot-core"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rustls",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -3456,7 +3458,7 @@ version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
- "aws-lc-rs",
+ "ring",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",
@@ -3519,7 +3521,6 @@ version = "0.103.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a0760a887c14823fca5a1c970b01d47c328c696c0c64829d1df50e8f853fd5"
 dependencies = [
- "aws-lc-rs",
  "ring",
  "rustls-pki-types",
  "untrusted",

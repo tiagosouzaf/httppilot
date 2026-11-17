@@ -13,19 +13,17 @@ optdepends=(
   'kdialog: KDE file picker support'
   'libsecret: integration with a Secret Service keyring'
 )
-makedepends=('rust' 'cargo' 'pkgconf' 'cmake' 'ninja')
+makedepends=('rust' 'cargo' 'pkgconf')
 options=('!debug')
 source=()
 sha256sums=()
 
 build() {
     cd "$startdir"
-    # Rust's default LLD linker on current Linux targets can omit native
-    # static archives (including AWS-LC). Use GNU BFD for this package.
-    # The AWS-LC CMake builder includes the full crypto native object set.
-    AWS_LC_SYS_CMAKE_BUILDER=1 \
-      LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
-      RUSTFLAGS="-C link-arg=-fuse-ld=bfd -C link-arg=-lsqlite3 -C link-arg=-ldbus-1" \
+    # Reqwest uses portable rustls/ring instead of AWS-LC on Linux.
+    # Prefer Rust's default linker flags; system SQLite and D-Bus are linked
+    # by their respective pkg-config integrations.
+    LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
       CARGO_TARGET_DIR="$startdir/target" \
       cargo build --locked --release \
         -p httppilot-desktop \

@@ -92,7 +92,7 @@ jobs:
             archlinux:latest \
             bash -euo pipefail -c '
               pacman -Syu --noconfirm --needed \
-                base-devel rust cargo pkgconf cmake ninja \
+                base-devel rust cargo pkgconf \
                 wayland libxkbcommon libx11 libglvnd sqlite dbus zstd
               useradd --create-home --shell /bin/bash builduser
               mkdir -p /build
