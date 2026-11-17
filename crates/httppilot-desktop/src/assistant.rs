@@ -509,9 +509,11 @@ mod tests {
 
     #[test]
     fn changing_provider_during_request_does_not_leave_send_disabled() {
-        let mut state = State::default();
-        state.busy = true;
-        state.send_generation = 4;
+        let mut state = State {
+            busy: true,
+            send_generation: 4,
+            ..State::default()
+        };
         let _ = update(&mut state, Message::BackendChanged(Backend::ClaudeApi));
         assert!(!state.busy);
         assert_eq!(state.send_generation, 5);
