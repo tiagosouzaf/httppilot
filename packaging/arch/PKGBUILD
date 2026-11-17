@@ -14,7 +14,10 @@ optdepends=(
   'libsecret: integration with a Secret Service keyring'
 )
 makedepends=('rust' 'cargo' 'pkgconf')
-options=('!debug')
+# Arch's global LTO/buildflags can produce native GCC LTO objects that
+# Rust's linker cannot resolve inside ring/dbus static archives. Cargo's
+# --release profile still applies full Rust optimizations.
+options=('!debug' '!lto' '!buildflags')
 source=()
 sha256sums=()
 
