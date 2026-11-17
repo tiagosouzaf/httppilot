@@ -7,7 +7,7 @@ pkgdesc='Native Rust HTTP API client with optional AI integrations'
 arch=('x86_64')
 url='https://github.com/tiagosouzaf/httppilot'
 license=('unknown')
-depends=('glibc' 'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd')
+depends=('glibc' 'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd' 'sqlite' 'dbus')
 optdepends=(
   'zenity: file picker support'
   'kdialog: KDE file picker support'
@@ -20,7 +20,11 @@ sha256sums=()
 
 build() {
     cd "$startdir"
-    CARGO_TARGET_DIR="$startdir/target" \
+    # Arch's native SQLite and D-Bus libraries are dynamically linked.
+    # Explicit linker arguments avoid unresolved native symbols with lld.
+    LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
+      RUSTFLAGS="-C link-arg=-lsqlite3 -C link-arg=-ldbus-1" \
+      CARGO_TARGET_DIR="$startdir/target" \
       cargo build --locked --release \
         -p httppilot-desktop \
         -p httppilot-cli

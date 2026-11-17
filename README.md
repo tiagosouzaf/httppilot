@@ -25,7 +25,7 @@ Preview installers are built automatically by [Native Installers GitHub Actions]
    sudo pacman -U ./httppilot-0.1.0-1-x86_64.pkg.tar.zst
    ```
 
-4. Launch **HttpPilot** from the applications menu or run `httppilot`. The package also installs the `httppilot-cli` command. To remove it, run `sudo pacman -R httppilot`.
+4. Launch **HttpPilot** from the applications menu or run `httppilot`. The package also installs the `httppilot-cli` command. It relies on the system SQLite and D-Bus libraries. To remove it, run `sudo pacman -R httppilot`.
 
 **Windows x64:** Download `HttpPilot-0.1.0-Windows-x64-Setup.exe` from [Releases](https://github.com/tiagosouzaf/httppilot/releases), run it, then launch **HttpPilot** using the Start Menu shortcut. The installer is per-user, requires no administrator privileges, installs the desktop and CLI binaries, and supports uninstallation through Windows Apps settings.
 
