@@ -13,17 +13,19 @@ optdepends=(
   'kdialog: KDE file picker support'
   'libsecret: integration with a Secret Service keyring'
 )
-makedepends=('rust' 'cargo' 'pkgconf')
+makedepends=('rust' 'cargo' 'pkgconf' 'cmake' 'ninja')
 options=('!debug')
 source=()
 sha256sums=()
 
 build() {
     cd "$startdir"
-    # Arch's native SQLite and D-Bus libraries are dynamically linked.
-    # Explicit linker arguments avoid unresolved native symbols with lld.
-    LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
-      RUSTFLAGS="-C link-arg=-lsqlite3 -C link-arg=-ldbus-1" \
+    # Rust's default LLD linker on current Linux targets can omit native
+    # static archives (including AWS-LC). Use GNU BFD for this package.
+    # The AWS-LC CMake builder includes the full crypto native object set.
+    AWS_LC_SYS_CMAKE_BUILDER=1 \
+      LIBSQLITE3_SYS_USE_PKG_CONFIG=1 \
+      RUSTFLAGS="-C link-arg=-fuse-ld=bfd -C link-arg=-lsqlite3 -C link-arg=-ldbus-1" \
       CARGO_TARGET_DIR="$startdir/target" \
       cargo build --locked --release \
         -p httppilot-desktop \
